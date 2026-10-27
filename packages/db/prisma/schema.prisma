@@ -120,6 +120,9 @@ model ClaimVersion {
   // The raw submitted claim blob is stored as EvidenceRecord(kind = CLAIM).payload.
   // Append-only trigger + CHECK (amount >= 0, version >= 1) added in the init migration.
 
+  // The unique constraint is the backstop, not the coordination mechanism: concurrent resubmissions
+  // of the same claimNo race on "max(version)+1" — ingest (Prompt 05) must advisory-lock
+  // (pg_advisory_xact_lock(hashtext(claimNo))) or retry on the P2002 unique violation.
   @@unique([claimNo, version])
   @@index([episodeId])
   @@index([contentHash])
@@ -176,6 +179,8 @@ model EvidenceLink {
 
   @@index([evidenceId])
   @@index([claimVersionId])
+  // onDelete on the ClaimVersion/EvidenceRecord FKs here (and on Finding/ClaimLine) is effectively
+  // unreachable: those parents are append-only, so their rows are never deleted. Kept for correctness.
 }
 
 model Finding {
