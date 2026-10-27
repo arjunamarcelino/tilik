@@ -121,7 +121,8 @@ model ClaimVersion {
   @@unique([claimNo, version])
   @@index([episodeId])
   @@index([contentHash])
-  @@index([claimNo, isCurrent])
+  // "current version of a claim" lookup + the one-current-per-claimNo invariant are enforced by a
+  // hand-authored partial UNIQUE index in the init migration: UNIQUE ("claimNo") WHERE "isCurrent".
 }
 
 model ClaimLine {

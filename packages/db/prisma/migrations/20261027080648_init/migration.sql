@@ -206,9 +206,6 @@ CREATE INDEX "ClaimVersion_episodeId_idx" ON "ClaimVersion"("episodeId");
 CREATE INDEX "ClaimVersion_contentHash_idx" ON "ClaimVersion"("contentHash");
 
 -- CreateIndex
-CREATE INDEX "ClaimVersion_claimNo_isCurrent_idx" ON "ClaimVersion"("claimNo", "isCurrent");
-
--- CreateIndex
 CREATE UNIQUE INDEX "ClaimVersion_claimNo_version_key" ON "ClaimVersion"("claimNo", "version");
 
 -- CreateIndex
@@ -302,6 +299,29 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- ClaimVersion is CONTENT-immutable, not row-immutable: lineage bookkeeping (isCurrent,
+-- supersededById, status) must be updatable when a newer version supersedes it. Block DELETE,
+-- and reject UPDATEs that touch any immutable (claim-content) column.
+CREATE OR REPLACE FUNCTION tilik_claimversion_guard() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'append-only table ClaimVersion: DELETE not permitted';
+  END IF;
+  IF ( NEW."id"          IS DISTINCT FROM OLD."id"
+    OR NEW."episodeId"   IS DISTINCT FROM OLD."episodeId"
+    OR NEW."version"     IS DISTINCT FROM OLD."version"
+    OR NEW."claimNo"     IS DISTINCT FROM OLD."claimNo"
+    OR NEW."inacbgCode"  IS DISTINCT FROM OLD."inacbgCode"
+    OR NEW."amount"      IS DISTINCT FROM OLD."amount"
+    OR NEW."contentHash" IS DISTINCT FROM OLD."contentHash"
+    OR NEW."fingerprint" IS DISTINCT FROM OLD."fingerprint"
+    OR NEW."submittedAt" IS DISTINCT FROM OLD."submittedAt" ) THEN
+    RAISE EXCEPTION 'ClaimVersion is content-immutable: only isCurrent/supersededById/status may change';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
 CREATE TRIGGER "AuditEvent_append_only" BEFORE UPDATE OR DELETE ON "AuditEvent"
   FOR EACH ROW EXECUTE FUNCTION tilik_block_mutation();
 CREATE TRIGGER "AuditEvent_no_truncate" BEFORE TRUNCATE ON "AuditEvent"
@@ -313,15 +333,20 @@ CREATE TRIGGER "EvidenceRecord_no_truncate" BEFORE TRUNCATE ON "EvidenceRecord"
   FOR EACH STATEMENT EXECUTE FUNCTION tilik_block_mutation();
 
 CREATE TRIGGER "ClaimVersion_append_only" BEFORE UPDATE OR DELETE ON "ClaimVersion"
-  FOR EACH ROW EXECUTE FUNCTION tilik_block_mutation();
+  FOR EACH ROW EXECUTE FUNCTION tilik_claimversion_guard();
 CREATE TRIGGER "ClaimVersion_no_truncate" BEFORE TRUNCATE ON "ClaimVersion"
   FOR EACH STATEMENT EXECUTE FUNCTION tilik_block_mutation();
 
 -- Defense-in-depth for non-owner roles (the app/worker role added in Prompt 03). INSERT/SELECT stay granted.
-REVOKE UPDATE, DELETE, TRUNCATE ON "AuditEvent", "EvidenceRecord", "ClaimVersion" FROM PUBLIC;
+REVOKE UPDATE, DELETE, TRUNCATE ON "AuditEvent", "EvidenceRecord" FROM PUBLIC;
+-- ClaimVersion keeps UPDATE (lineage columns are mutable; tilik_claimversion_guard restricts which columns change).
+REVOKE DELETE, TRUNCATE ON "ClaimVersion" FROM PUBLIC;
 
 -- Self-pruning FIFO index for the transactional-outbox relay (SELECT ... FOR UPDATE SKIP LOCKED).
 CREATE INDEX "OutboxJob_pending_fifo_idx" ON "OutboxJob" ("createdAt") WHERE "status" = 'PENDING';
+
+-- Exactly one current version per claimNo (partial unique; replaces the non-unique (claimNo, isCurrent) index).
+CREATE UNIQUE INDEX "ClaimVersion_one_current_idx" ON "ClaimVersion" ("claimNo") WHERE "isCurrent";
 
 -- Data-quality CHECK constraints.
 ALTER TABLE "ClaimVersion"   ADD CONSTRAINT "ClaimVersion_amount_nonneg"   CHECK ("amount" >= 0);
