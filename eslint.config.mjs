@@ -10,6 +10,7 @@ export default tseslint.config(
       '**/node_modules/**',
       '**/.next/**',
       '**/coverage/**',
+      '**/generated/**', // Prisma-generated client (TS source under packages/db/src/generated)
       'docs/**',
       '**/.venv/**',
       '**/__pycache__/**',

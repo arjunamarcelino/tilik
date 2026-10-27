@@ -16,8 +16,8 @@ dist/
 __pycache__/
 *.pyc
 
-# Prisma generated client (Prompt 02)
-packages/db/generated/
+# Prisma generated client (Prompt 02) — the prisma-client generator emits TS source under src/
+packages/db/src/generated/
 .prisma/
 
 # MinIO / container data (Prompt 03+)
