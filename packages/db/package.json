@@ -20,6 +20,7 @@
     "generate": "prisma generate",
     "migrate:dev": "prisma migrate dev",
     "migrate:deploy": "prisma migrate deploy",
+    "db:grant": "prisma db execute --file ../../infra/postgres/grant-app.sql",
     "studio": "prisma studio",
     "build": "prisma generate && tsc -p tsconfig.build.json",
     "typecheck": "prisma generate && tsc --noEmit"

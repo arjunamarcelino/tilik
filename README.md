@@ -39,4 +39,53 @@ pnpm lint
 pnpm format:check
 ```
 
+## Local infrastructure
+
+Postgres + MinIO run via Docker Compose; the app services (web / api / detector) run from the
+terminal in dev. First, create the single repo-root `.env` from the authoritative template:
+
+```bash
+cp infra/.env.example .env          # then edit .env with real local values
+```
+
+Bring up the stores (first run also creates the `tilik-evidence` bucket and the non-owner `tilik_app`
+role):
+
+Compose interpolates variables from `.env` in its own directory, so point it at the repo-root file
+with `--env-file ../.env`:
+
+```bash
+cd infra
+docker compose --env-file ../.env up -d postgres minio minio-init
+docker compose --env-file ../.env ps   # postgres healthy; minio Up; minio-init Exited (0)
+```
+
+Apply the schema (Prompt 02), then grant the app role (idempotent — re-run after each migration):
+
+```bash
+pnpm --filter @tilik/db migrate:dev
+pnpm --filter @tilik/db db:grant
+```
+
+### Environment
+
+All services and Prisma load a **single repo-root `.env`** (copied from `infra/.env.example`). `.env`
+is gitignored — never commit real secrets. Only `NEXT_PUBLIC_*` vars reach the browser; never prefix
+a secret with `NEXT_PUBLIC_`, and start the `web` process with a minimal allow-list, not the whole file.
+
+### Notes
+
+- MinIO uses the `cgr.dev/chainguard/minio` mirror (Docker Hub's `minio/minio` was retired in 2026).
+  It runs as non-root and has no in-container healthcheck, so `minio` shows `Up`; `minio-init` exiting
+  `0` is the readiness + bucket-created signal. The free tier only offers `:latest` — pin a digest if
+  you need reproducibility.
+- **Port 5432 collision:** if a local Postgres already listens on `localhost:5432` it shadows the
+  Compose one for host connections (`migrate` would hit the wrong DB). Stop it, or remap the Compose
+  host port.
+- `docker-entrypoint-initdb.d` runs only on a fresh volume — on an existing `tilik-pgdata` volume the
+  `tilik_app` role is not recreated; `docker compose --env-file ../.env down -v` to re-init.
+- Managed Postgres that forbids `CREATE DATABASE` needs a `SHADOW_DATABASE_URL` for `migrate:dev`; the
+  local owner has `CREATEDB`, so the shadow DB just works. App services (web / api / detector) and the
+  prod Compose + Caddy arrive in Prompt 14.
+
 Next phases are tracked in `docs/Tilik_Build_Prompts.md` (gitignored locally).
