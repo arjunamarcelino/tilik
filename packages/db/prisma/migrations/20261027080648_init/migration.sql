@@ -377,3 +377,23 @@ ALTER TABLE "ClaimLine"      ADD CONSTRAINT "ClaimLine_amount_nonneg"      CHECK
 ALTER TABLE "Episode"        ADD CONSTRAINT "Episode_dates_order"          CHECK ("endedAt" IS NULL OR "endedAt" >= "startedAt");
 ALTER TABLE "EvidenceRecord" ADD CONSTRAINT "EvidenceRecord_has_content"   CHECK ("objectKey" IS NOT NULL OR "payload" IS NOT NULL);
 ALTER TABLE "EvidenceLink"   ADD CONSTRAINT "EvidenceLink_relation_values" CHECK ("relation" IN ('mendukung', 'bertentangan', 'sumber'));
+ALTER TABLE "Finding"        ADD CONSTRAINT "Finding_score_range"          CHECK ("score" >= 0 AND "score" <= 1); -- range also rejects NaN
+ALTER TABLE "Finding"        ADD CONSTRAINT "Finding_evidenceRefs_array"   CHECK (jsonb_typeof("evidenceRefs") = 'array');
+ALTER TABLE "ClaimLine"      ADD CONSTRAINT "ClaimLine_sequence_min"       CHECK ("sequence" >= 1);
+
+-- jsonb size ceilings (~1 MiB): defend against unbounded/DoS payloads, which matter more here
+-- because the append-only tables can never be pruned. octet_length(x::text) is immutable.
+ALTER TABLE "EvidenceRecord" ADD CONSTRAINT "EvidenceRecord_payload_size"  CHECK ("payload"  IS NULL OR octet_length("payload"::text)  < 1048576);
+ALTER TABLE "AuditEvent"     ADD CONSTRAINT "AuditEvent_metadata_size"     CHECK ("metadata" IS NULL OR octet_length("metadata"::text) < 1048576);
+ALTER TABLE "Finding"        ADD CONSTRAINT "Finding_reasons_size"         CHECK (octet_length("reasons"::text)      < 1048576);
+ALTER TABLE "Finding"        ADD CONSTRAINT "Finding_evidenceRefs_size"    CHECK (octet_length("evidenceRefs"::text) < 1048576);
+ALTER TABLE "OutboxJob"      ADD CONSTRAINT "OutboxJob_payload_size"       CHECK (octet_length("payload"::text)      < 1048576);
+
+-- Case-insensitive uniqueness for User.email (the app lowercases on write; this keeps the DB authoritative
+-- without the citext extension and its Prisma type-drift).
+CREATE UNIQUE INDEX "User_email_lower_key" ON "User" (lower("email"));
+
+-- INGEST CONTRACT (enforced in the API/worker, not the DB): the HMAC pseudonym protects ONLY patientToken.
+-- No raw identifier (NIK/BPJS/name/address) may be written into any free-text or JSON column
+-- (payload/metadata/reasons/description/note/summary/rationale). Patient erasure is done by crypto-shredding
+-- (dropping the PATIENT_TOKEN_HMAC_KEY / key version), never by deleting append-only rows.

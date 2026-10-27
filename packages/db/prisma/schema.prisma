@@ -185,10 +185,10 @@ model Finding {
   claimVersion   ClaimVersion? @relation(fields: [claimVersionId], references: [id], onDelete: SetNull)
   claimVersionId String?
   detector       DetectorType
-  score          Float
+  score          Float // init migration: CHECK 0..1 (also rejects NaN)
   severity       Severity
   reasons        Json
-  evidenceRefs   Json // array of EvidenceRecord ids (soft refs; a join table lands in a later prompt)
+  evidenceRefs   Json // array of EvidenceRecord ids (soft refs; a join table lands in a later prompt). init migration: CHECK jsonb_typeof = 'array'
   case           Case?         @relation(fields: [caseId], references: [id], onDelete: SetNull)
   caseId         String?
 
@@ -253,7 +253,7 @@ model OutboxJob {
 
 model User {
   id           String   @id @default(cuid())
-  email        String   @unique // normalized to lowercase in the auth layer (avoids case-duplicate accounts)
+  email        String   @unique // lowercased in the auth layer; init migration adds a UNIQUE (lower(email)) index
   passwordHash String // argon2id (or bcrypt cost >= 12), enforced in the auth layer
   role         Role // no default — prevents accidental ADMIN
   isActive     Boolean  @default(true)
