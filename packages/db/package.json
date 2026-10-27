@@ -20,7 +20,6 @@
     "migrate:dev": "prisma migrate dev",
     "migrate:deploy": "prisma migrate deploy",
     "studio": "prisma studio",
-    "check:enums": "tsx scripts/check-enum-parity.ts",
     "build": "prisma generate && tsc -p tsconfig.build.json",
     "typecheck": "prisma generate && tsc --noEmit"
   },
@@ -34,7 +33,6 @@
     "@types/pg": "^8.23.1",
     "dotenv": "^18.0.9",
     "prisma": "^7.10.1",
-    "tsx": "^4.23.15",
     "typescript": "^5.6.0"
   }
 }
