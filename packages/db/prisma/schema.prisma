@@ -195,7 +195,7 @@ model Finding {
   @@index([episodeId])
   @@index([claimVersionId])
   @@index([caseId])
-  @@index([detector])
+  @@index([detector, severity])
 }
 
 model Case {
@@ -246,9 +246,9 @@ model OutboxJob {
   lockedBy  String?
   lockedAt  DateTime?
   createdAt DateTime  @default(now())
-  // A partial index (WHERE status = 'PENDING') for FIFO polling is added in the init migration.
-
-  @@index([status, createdAt])
+  // FIFO polling is served by a hand-authored partial index (WHERE status = 'PENDING') in the init
+  // migration; a plain (status, createdAt) index would be redundant with it. Add an index for any
+  // non-PENDING sweep (e.g. a stuck-PROCESSING janitor) when that query lands (Prompt 08).
 }
 
 model User {

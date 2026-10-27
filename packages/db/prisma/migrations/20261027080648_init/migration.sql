@@ -242,7 +242,7 @@ CREATE INDEX "Finding_claimVersionId_idx" ON "Finding"("claimVersionId");
 CREATE INDEX "Finding_caseId_idx" ON "Finding"("caseId");
 
 -- CreateIndex
-CREATE INDEX "Finding_detector_idx" ON "Finding"("detector");
+CREATE INDEX "Finding_detector_severity_idx" ON "Finding"("detector", "severity");
 
 -- CreateIndex
 CREATE INDEX "Case_status_createdAt_idx" ON "Case"("status", "createdAt" DESC);
@@ -252,9 +252,6 @@ CREATE UNIQUE INDEX "Decision_caseId_key" ON "Decision"("caseId");
 
 -- CreateIndex
 CREATE INDEX "AuditEvent_targetId_idx" ON "AuditEvent"("targetId");
-
--- CreateIndex
-CREATE INDEX "OutboxJob_status_createdAt_idx" ON "OutboxJob"("status", "createdAt");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
