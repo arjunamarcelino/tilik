@@ -3,8 +3,10 @@
 // Design invariants:
 //   - Versioning: a resubmitted claim is a NEW ClaimVersion row (version + 1, same claimNo,
 //     new contentHash) — never an in-place edit. @@unique([claimNo, version]) forbids duplicates.
-//   - Tamper-evidence: AuditEvent, EvidenceRecord, and ClaimVersion are append-only, enforced by
-//     DB triggers + REVOKE in the init migration (not just by the absence of update/delete helpers).
+//   - Append-only: AuditEvent and EvidenceRecord reject UPDATE/DELETE/TRUNCATE; ClaimVersion is
+//     content-immutable (only lineage columns change). Enforced by DB triggers (ENABLE ALWAYS) +
+//     REVOKE in the init migration. NOTE: this is append-only, not cryptographic tamper-EVIDENCE —
+//     a DB superuser/owner can still disable a trigger. A hash chain on AuditEvent is future work.
 //   - Privacy: patientToken is a keyed HMAC pseudonym computed in the API layer — never a real NIK/BPJS.
 //
 // Enums mirror @tilik/shared exactly; scripts/check-enum-parity.ts verifies this at build/CI time.
@@ -216,8 +218,9 @@ model Decision {
   decidedAt DateTime
 }
 
-/// Append-only audit log. No update/delete helper is shipped; the init migration adds
-/// triggers (UPDATE/DELETE + TRUNCATE) and REVOKEs the mutating privileges.
+/// Append-only audit log (not cryptographic tamper-evidence — a hash chain is future work).
+/// No update/delete helper is shipped; the init migration adds ENABLE ALWAYS triggers
+/// (UPDATE/DELETE + TRUNCATE) and REVOKEs the mutating privileges from non-owner roles.
 model AuditEvent {
   id         String   @id @default(cuid())
   actor      String

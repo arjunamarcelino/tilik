@@ -291,8 +291,10 @@ ALTER TABLE "Decision" ADD CONSTRAINT "Decision_caseId_fkey" FOREIGN KEY ("caseI
 -- shadow DB and therefore never registers as drift).
 -- ─────────────────────────────────────────────────────────────────────────────
 
--- Append-only enforcement: tamper-evidence for the evidence/audit spine.
--- The trigger fires for every role (incl. the table owner); REVOKE is defense-in-depth.
+-- Append-only enforcement for the evidence/audit spine (append-only, NOT cryptographic
+-- tamper-evidence: a superuser/owner can still DISABLE a trigger; a hash chain is future work).
+-- Triggers are ENABLE ALWAYS (below) so they also fire under session_replication_role='replica'.
+-- REVOKE is defense-in-depth for non-owner roles.
 CREATE OR REPLACE FUNCTION tilik_block_mutation() RETURNS trigger AS $$
 BEGIN
   RAISE EXCEPTION 'append-only table %: % not permitted', TG_TABLE_NAME, TG_OP;
@@ -336,6 +338,14 @@ CREATE TRIGGER "ClaimVersion_append_only" BEFORE UPDATE OR DELETE ON "ClaimVersi
   FOR EACH ROW EXECUTE FUNCTION tilik_claimversion_guard();
 CREATE TRIGGER "ClaimVersion_no_truncate" BEFORE TRUNCATE ON "ClaimVersion"
   FOR EACH STATEMENT EXECUTE FUNCTION tilik_block_mutation();
+
+-- ENABLE ALWAYS: keep the guards active even under logical replication / session_replication_role='replica'.
+ALTER TABLE "AuditEvent"     ENABLE ALWAYS TRIGGER "AuditEvent_append_only";
+ALTER TABLE "AuditEvent"     ENABLE ALWAYS TRIGGER "AuditEvent_no_truncate";
+ALTER TABLE "EvidenceRecord" ENABLE ALWAYS TRIGGER "EvidenceRecord_append_only";
+ALTER TABLE "EvidenceRecord" ENABLE ALWAYS TRIGGER "EvidenceRecord_no_truncate";
+ALTER TABLE "ClaimVersion"   ENABLE ALWAYS TRIGGER "ClaimVersion_append_only";
+ALTER TABLE "ClaimVersion"   ENABLE ALWAYS TRIGGER "ClaimVersion_no_truncate";
 
 -- Defense-in-depth for non-owner roles (the app/worker role added in Prompt 03). INSERT/SELECT stay granted.
 REVOKE UPDATE, DELETE, TRUNCATE ON "AuditEvent", "EvidenceRecord" FROM PUBLIC;
