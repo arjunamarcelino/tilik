@@ -347,8 +347,17 @@ ALTER TABLE "EvidenceRecord" ENABLE ALWAYS TRIGGER "EvidenceRecord_no_truncate";
 ALTER TABLE "ClaimVersion"   ENABLE ALWAYS TRIGGER "ClaimVersion_append_only";
 ALTER TABLE "ClaimVersion"   ENABLE ALWAYS TRIGGER "ClaimVersion_no_truncate";
 
+-- ClaimLine is the billed content of an immutable claim: fully append-only (no mutable columns).
+-- (EvidenceLink stays mutable by design — linking/curation and note edits are legitimate review workflow.)
+CREATE TRIGGER "ClaimLine_append_only" BEFORE UPDATE OR DELETE ON "ClaimLine"
+  FOR EACH ROW EXECUTE FUNCTION tilik_block_mutation();
+CREATE TRIGGER "ClaimLine_no_truncate" BEFORE TRUNCATE ON "ClaimLine"
+  FOR EACH STATEMENT EXECUTE FUNCTION tilik_block_mutation();
+ALTER TABLE "ClaimLine" ENABLE ALWAYS TRIGGER "ClaimLine_append_only";
+ALTER TABLE "ClaimLine" ENABLE ALWAYS TRIGGER "ClaimLine_no_truncate";
+
 -- Defense-in-depth for non-owner roles (the app/worker role added in Prompt 03). INSERT/SELECT stay granted.
-REVOKE UPDATE, DELETE, TRUNCATE ON "AuditEvent", "EvidenceRecord" FROM PUBLIC;
+REVOKE UPDATE, DELETE, TRUNCATE ON "AuditEvent", "EvidenceRecord", "ClaimLine" FROM PUBLIC;
 -- ClaimVersion keeps UPDATE (lineage columns are mutable; tilik_claimversion_guard restricts which columns change).
 REVOKE DELETE, TRUNCATE ON "ClaimVersion" FROM PUBLIC;
 

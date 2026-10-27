@@ -139,6 +139,7 @@ model ClaimLine {
 
   @@index([claimVersionId])
   @@index([type, code])
+  // Append-only: the init migration blocks UPDATE/DELETE/TRUNCATE (claim content is immutable).
 }
 
 model EvidenceRecord {
