@@ -206,6 +206,9 @@ CREATE INDEX "ClaimVersion_episodeId_idx" ON "ClaimVersion"("episodeId");
 CREATE INDEX "ClaimVersion_contentHash_idx" ON "ClaimVersion"("contentHash");
 
 -- CreateIndex
+CREATE INDEX "ClaimVersion_fingerprint_idx" ON "ClaimVersion"("fingerprint");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "ClaimVersion_claimNo_version_key" ON "ClaimVersion"("claimNo", "version");
 
 -- CreateIndex
@@ -219,6 +222,9 @@ CREATE INDEX "EvidenceRecord_episodeId_idx" ON "EvidenceRecord"("episodeId");
 
 -- CreateIndex
 CREATE INDEX "EvidenceRecord_contentHash_idx" ON "EvidenceRecord"("contentHash");
+
+-- CreateIndex
+CREATE INDEX "EvidenceRecord_fingerprint_idx" ON "EvidenceRecord"("fingerprint");
 
 -- CreateIndex
 CREATE INDEX "EvidenceLink_evidenceId_idx" ON "EvidenceLink"("evidenceId");
