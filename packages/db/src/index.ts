@@ -6,19 +6,21 @@ import { PrismaClient } from './generated/prisma/client';
 // every model type, and every generated enum.
 export * from './generated/prisma/client';
 
-declare global {
-  var __tilikPrisma: PrismaClient | undefined;
+let client: PrismaClient | undefined;
+
+/**
+ * Lazily create the process-wide Prisma client (Prisma 7 requires a driver adapter).
+ *
+ * Importing `@tilik/db` is side-effect-free: the client and its pg pool are built on the first
+ * call, so a type-only or enum-only import never allocates a connection or a duplicate client.
+ * NestJS (Prompt 04) wraps the class in its own `PrismaService`; this accessor is for scripts/seeds.
+ */
+export function getPrisma(): PrismaClient {
+  return (client ??= new PrismaClient({
+    adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
+  }));
 }
 
-// Prisma 7 requires a driver adapter (or an Accelerate URL). The URL is read at runtime from
-// the environment; the connection is lazy, so importing @tilik/db never touches the database
-// (keeps `pnpm -r build` / `prisma generate` database-free).
-const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
-
-// Hot-reload-safe singleton. NestJS (Prompt 04) wraps the class in a PrismaService; this
-// instance is for scripts and seeds.
-export const prisma: PrismaClient = globalThis.__tilikPrisma ?? new PrismaClient({ adapter });
-if (process.env.NODE_ENV !== 'production') globalThis.__tilikPrisma = prisma;
-
-// AuditEvent, EvidenceRecord, and ClaimVersion are append-only (enforced in the database).
-// No auditUpdate/auditDelete is exported; a future recordAudit() must expose create + read only.
+// AuditEvent/EvidenceRecord/ClaimLine are append-only and ClaimVersion is content-immutable
+// (enforced in the database). No auditUpdate/auditDelete is exported; a future recordAudit()
+// must expose create + read only.
