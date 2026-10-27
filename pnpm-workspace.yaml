@@ -1,0 +1,5 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+# services/detector (Python), data/synthetic, and infra are intentionally
+# NOT workspace packages — keep TS tooling out of them.

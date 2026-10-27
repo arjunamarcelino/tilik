@@ -1,0 +1,37 @@
+{
+  "name": "tilik",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Tilik — Sistem Integritas Bukti Pelayanan JKN (evidence-integrity system for JKN health-claim fraud).",
+  "packageManager": "pnpm@10.29.2",
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": ">=10"
+    }
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "echo 'Per-app dev commands arrive in later prompts (NestJS/Next.js).'",
+    "typecheck": "pnpm -r --if-present run typecheck",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.13.0",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.9.10",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.72.0"
+  }
+}

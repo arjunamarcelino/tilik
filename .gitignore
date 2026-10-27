@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+.next/
+*.tsbuildinfo
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Prisma generated client (Prompt 02)
+packages/db/generated/
+.prisma/
+
+# MinIO / container data (Prompt 03+)
+**/minio-data/
+infra/**/data/
+
+# Test / coverage
+coverage/
+
+# OS / editor
+.DS_Store
+
+# Deliverables & working docs — kept out of the code repo (by request)
+docs/

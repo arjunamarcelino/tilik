@@ -1,0 +1,9 @@
+dist
+node_modules
+pnpm-lock.yaml
+docs
+.next
+coverage
+.venv
+__pycache__
+*.py
