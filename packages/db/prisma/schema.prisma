@@ -1,0 +1,277 @@
+// Tilik — PostgreSQL schema (single source of truth).
+//
+// Design invariants:
+//   - Versioning: a resubmitted claim is a NEW ClaimVersion row (version + 1, same claimNo,
+//     new contentHash) — never an in-place edit. @@unique([claimNo, version]) forbids duplicates.
+//   - Append-only: AuditEvent and EvidenceRecord reject UPDATE/DELETE/TRUNCATE; ClaimVersion is
+//     content-immutable (only lineage columns change). Enforced by DB triggers (ENABLE ALWAYS) +
+//     REVOKE in the init migration. NOTE: this is append-only, not cryptographic tamper-EVIDENCE —
+//     a DB superuser/owner can still disable a trigger. A hash chain on AuditEvent is future work.
+//   - Privacy: patientToken is a keyed HMAC pseudonym computed in the API layer — never a real NIK/BPJS.
+//
+// Enums mirror @tilik/shared exactly; scripts/check-enum-parity.ts verifies this at build/CI time.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+  runtime      = "nodejs"
+}
+
+datasource db {
+  provider = "postgresql"
+  // Prisma 7: the connection URL lives in prisma.config.ts (for the CLI/Migrate) and is passed
+  // to PrismaClient via the pg driver adapter at runtime — no `url` field in the schema.
+}
+
+/// Mirror of @tilik/shared — verified by scripts/check-enum-parity.ts.
+enum DetectorType {
+  REPEAT_BILLING
+  CLONING
+  PERTENTANGAN_BUKTI
+}
+
+enum Severity {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum CaseStatus {
+  OPEN
+  IN_REVIEW
+  PENDING
+  ESCALATED
+  CLOSED
+}
+
+enum Verdict {
+  CONFIRMED_FRAUD
+  NOT_FRAUD
+  NEEDS_MORE_INFO
+}
+
+enum EvidenceKind {
+  MEDICAL_RECORD
+  LAB
+  IMAGING
+  ATTACHMENT
+  CLAIM
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  DONE
+  FAILED
+}
+
+enum Role {
+  REVIEWER
+  ADMIN
+}
+
+enum ClaimStatus {
+  ACTIVE
+  CANCELLED
+  ENTERED_IN_ERROR
+}
+
+enum ClaimLineType {
+  DIAGNOSIS
+  PROCEDURE
+}
+
+model Episode {
+  id           String           @id @default(cuid())
+  patientToken String // HMAC pseudonym — NOT a real patient id (computed in the API layer)
+  facilityId   String
+  startedAt    DateTime
+  endedAt      DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  claims       ClaimVersion[]
+  evidence     EvidenceRecord[]
+  findings     Finding[]
+
+  @@index([patientToken])
+  @@index([facilityId])
+}
+
+model ClaimVersion {
+  id             String         @id @default(cuid())
+  episode        Episode        @relation(fields: [episodeId], references: [id], onDelete: Restrict)
+  episodeId      String
+  version        Int
+  claimNo        String
+  inacbgCode     String
+  amount         Decimal        @db.Decimal(14, 2)
+  contentHash    String // exact content hash (dedup / repeat-billing)
+  fingerprint    String? // near-duplicate signature (SimHash/MinHash) — distinct from contentHash
+  status         ClaimStatus    @default(ACTIVE)
+  isCurrent      Boolean        @default(true)
+  supersededBy   ClaimVersion?  @relation("ClaimLineage", fields: [supersededById], references: [id], onDelete: Restrict)
+  supersededById String?        @unique
+  supersedes     ClaimVersion?  @relation("ClaimLineage")
+  submittedAt    DateTime
+  lines          ClaimLine[]
+  links          EvidenceLink[]
+  findings       Finding[]
+  // The raw submitted claim blob is stored as EvidenceRecord(kind = CLAIM).payload.
+  // Append-only trigger + CHECK (amount >= 0, version >= 1) added in the init migration.
+
+  // The unique constraint is the backstop, not the coordination mechanism: concurrent resubmissions
+  // of the same claimNo race on "max(version)+1" — ingest (Prompt 05) must advisory-lock
+  // (pg_advisory_xact_lock(hashtext(claimNo))) or retry on the P2002 unique violation.
+  @@unique([claimNo, version])
+  @@index([episodeId])
+  @@index([contentHash])
+  @@index([fingerprint])
+  // "current version of a claim" lookup + the one-current-per-claimNo invariant are enforced by a
+  // hand-authored partial UNIQUE index in the init migration: UNIQUE ("claimNo") WHERE "isCurrent".
+}
+
+model ClaimLine {
+  id             String        @id @default(cuid())
+  claimVersion   ClaimVersion  @relation(fields: [claimVersionId], references: [id], onDelete: Cascade)
+  claimVersionId String
+  type           ClaimLineType
+  code           String // ICD-10 (DIAGNOSIS) or procedure code (PROCEDURE)
+  sequence       Int // FHIR diagnosisSequence / procedureSequence
+  description    String?
+  amount         Decimal?      @db.Decimal(14, 2)
+
+  @@index([claimVersionId])
+  @@index([type, code])
+  // Append-only: the init migration blocks UPDATE/DELETE/TRUNCATE (claim content is immutable).
+}
+
+model EvidenceRecord {
+  id          String         @id @default(cuid())
+  episode     Episode        @relation(fields: [episodeId], references: [id], onDelete: Restrict)
+  episodeId   String
+  kind        EvidenceKind
+  objectKey   String? // MinIO object key
+  payload     Json?
+  contentHash String
+  hashAlgo    String         @default("sha256")
+  fingerprint String? // near-duplicate signature, distinct from contentHash
+  ingestedBy  String? // chain-of-custody: who captured it
+  source      String? // chain-of-custody: provenance system
+  verifiedAt  DateTime? // chain-of-custody: last hash re-verification
+  capturedAt  DateTime
+  links       EvidenceLink[]
+  // Append-only trigger + CHECK (objectKey IS NOT NULL OR payload IS NOT NULL) added in the init migration.
+
+  @@index([episodeId])
+  @@index([contentHash])
+  @@index([fingerprint])
+}
+
+model EvidenceLink {
+  id             String         @id @default(cuid())
+  evidence       EvidenceRecord @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+  evidenceId     String
+  claimVersion   ClaimVersion?  @relation(fields: [claimVersionId], references: [id], onDelete: Restrict)
+  claimVersionId String?
+  relation       String // "mendukung" | "bertentangan" | "sumber" — CHECK constraint in the init migration
+  note           String?
+
+  @@index([evidenceId])
+  @@index([claimVersionId])
+  // onDelete on the ClaimVersion/EvidenceRecord FKs here (and on Finding/ClaimLine) is effectively
+  // unreachable: those parents are append-only, so their rows are never deleted. Kept for correctness.
+}
+
+model Finding {
+  id             String        @id @default(cuid())
+  episode        Episode       @relation(fields: [episodeId], references: [id], onDelete: Restrict)
+  episodeId      String
+  claimVersion   ClaimVersion? @relation(fields: [claimVersionId], references: [id], onDelete: SetNull)
+  claimVersionId String?
+  detector       DetectorType
+  score          Float // init migration: CHECK 0..1 (also rejects NaN)
+  severity       Severity
+  reasons        Json
+  evidenceRefs   Json // array of EvidenceRecord ids (soft refs; a join table lands in a later prompt). init migration: CHECK jsonb_typeof = 'array'
+  case           Case?         @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  caseId         String?
+
+  @@index([episodeId])
+  @@index([claimVersionId])
+  @@index([caseId])
+  @@index([detector, severity])
+}
+
+model Case {
+  id         String     @id @default(cuid())
+  status     CaseStatus @default(OPEN)
+  assignedTo String?
+  summary    String?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  findings   Finding[]
+  decision   Decision?
+
+  @@index([status, createdAt(sort: Desc)])
+}
+
+model Decision {
+  id        String   @id @default(cuid())
+  case      Case     @relation(fields: [caseId], references: [id], onDelete: Restrict)
+  caseId    String   @unique
+  verdict   Verdict
+  rationale String
+  decidedBy String
+  decidedAt DateTime
+}
+
+/// Append-only audit log (not cryptographic tamper-evidence — a hash chain is future work).
+/// No update/delete helper is shipped; the init migration adds ENABLE ALWAYS triggers
+/// (UPDATE/DELETE + TRUNCATE) and REVOKEs the mutating privileges from non-owner roles.
+model AuditEvent {
+  id         String   @id @default(cuid())
+  actor      String
+  action     String
+  targetType String
+  targetId   String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([targetId])
+}
+
+/// Transactional outbox. Intentionally MUTABLE (status/attempts/lockedBy change by design) — no trigger.
+model OutboxJob {
+  id        String    @id @default(cuid())
+  type      String
+  payload   Json
+  status    JobStatus @default(PENDING)
+  attempts  Int       @default(0)
+  lockedBy  String?
+  lockedAt  DateTime?
+  createdAt DateTime  @default(now())
+  // FIFO polling is served by a hand-authored partial index (WHERE status = 'PENDING') in the init
+  // migration; a plain (status, createdAt) index would be redundant with it. Add an index for any
+  // non-PENDING sweep (e.g. a stuck-PROCESSING janitor) when that query lands (Prompt 08).
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique // lowercased in the auth layer; init migration adds a UNIQUE (lower(email)) index
+  passwordHash String // argon2id (or bcrypt cost >= 12), enforced in the auth layer
+  role         Role // no default — prevents accidental ADMIN
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model ImportBatch {
+  id              String    @id @default(cuid())
+  idempotencyKey  String?   @unique
+  status          JobStatus @default(PENDING)
+  totalRecords    Int
+  acceptedRecords Int
+  rejectedRecords Int
+  createdAt       DateTime  @default(now())
+}
