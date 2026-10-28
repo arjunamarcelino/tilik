@@ -49,16 +49,17 @@ cp infra/.env.example .env          # then edit .env with real local values
 ```
 
 Bring up the stores (first run also creates the `tilik-evidence` bucket and the non-owner `tilik_app`
-role):
-
-Compose interpolates variables from `.env` in its own directory, so point it at the repo-root file
-with `--env-file ../.env`:
+role). Compose reads its interpolation `.env` from its own directory, so the `infra/compose.sh`
+wrapper always passes `--env-file ../.env` for you — use it for every compose command:
 
 ```bash
 cd infra
-docker compose --env-file ../.env up -d postgres minio minio-init
-docker compose --env-file ../.env ps   # postgres healthy; minio Up; minio-init Exited (0)
+./compose.sh up -d postgres minio minio-init
+./compose.sh ps                      # postgres healthy; minio Up; minio-init Exited (0)
 ```
+
+> The wrapper just runs `docker compose --env-file ../.env "$@"`. **Do not create `infra/.env`** —
+> Compose would auto-load it and silently shadow the single repo-root `.env`.
 
 Apply the schema (Prompt 02), then grant the app role (idempotent — re-run after each migration):
 
