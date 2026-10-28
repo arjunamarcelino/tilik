@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import TypedDict
 
 from . import config
+from .guard import _AMOUNT, GuardError, scan, scan_bytes
 
 
 class Label(TypedDict, total=False):
@@ -27,18 +28,8 @@ class Label(TypedDict, total=False):
     clusterId: str
     relatedRefs: list[str]
 
-# --- Guard patterns ------------------------------------------------------------------------------
+# --- Integrity patterns (the no-PII scan lives in guard.py) --------------------------------------
 
-# 12+ digits allowing a single separator between each — catches grouped NIK/NPWP/BPJS/phone/KK
-# (e.g. "3173 0522 0890 0001", "09.254.294.3-407.000", "3173/0522/0890/0001", "1,234,567,890,123").
-# Unanchored so embedded runs also hit. Used on JSON/narrative text, where free-form human identifiers
-# would appear. (A shape backstop — the Faker allow-list facade is the primary control.)
-_DIGIT_RUN = re.compile(r"\d(?:[ .,\-/]?\d){11,}")
-# Contiguous 12+ digits only — used on binary file bytes, whose structure legitimately contains
-# space-separated digit groups (e.g. a PDF xref table's zero-padded offsets). Our generated files only
-# embed the (validated) evidence ref + a fixed title, so a grouped identifier can't originate there.
-_DIGIT_RUN_CONTIG = re.compile(r"\d{12,}")
-_AMOUNT = re.compile(r"^\d{1,12}\.\d{2}$")
 _PATIENT_REF = re.compile(r"^SYN-PATIENT-\d{4,}$")
 _FACILITY_ID = re.compile(r"^SYN-FAC-\d+$")
 _RELATIONS = frozenset({config.REL_SUPPORT, config.REL_CONTRADICT, config.REL_SOURCE})
@@ -53,10 +44,6 @@ def _file_ext(data: bytes) -> str:
 def _ref_key(ref: str) -> int:
     """Numeric suffix of a bundle ref (e.g. 'ep_0042' -> 42) for stable sorting beyond 9999."""
     return int(ref.rsplit("_", 1)[1])
-
-
-class GuardError(Exception):
-    """Raised when the bundle would leak a real-looking identifier or violate an invariant."""
 
 
 # --- Entities (frozen; serialized via asdict) ----------------------------------------------------
@@ -205,10 +192,10 @@ class Bundle:
 
     def _guard(self, files: dict[str, object], manifest: dict) -> None:
         for name, payload in files.items():
-            _scan(payload, name)
-        _scan(manifest, "manifest.json")
+            scan(payload, name)
+        scan(manifest, "manifest.json")
         for ref, data in self._files.items():
-            _scan_bytes(data, f"files/{ref}")
+            scan_bytes(data, f"files/{ref}")
 
     def _check_integrity(self, files: dict[str, object]) -> None:
         ep_refs = {e.ref for e in self.episodes}
@@ -281,47 +268,6 @@ def _require(condition: object, message: str) -> None:
 
 def _check_amount(value: str, where: str) -> None:
     _require(_AMOUNT.match(value), f"{where}: amount {value!r} must match ^\\d{{1,12}}\\.\\d{{2}}$")
-
-
-def _scan_text(text: str, where: str) -> None:
-    m = _DIGIT_RUN.search(text)
-    if m:
-        raise GuardError(f"possible real identifier {m.group()!r} at {where}")
-
-
-def _scan(obj: object, where: str) -> None:
-    """Recursively scan a JSON-ish structure; skip the (numeric, validated) 'amount' field values."""
-    if isinstance(obj, dict):
-        for k, v in obj.items():
-            _scan_text(str(k), f"{where}.{k} (key)")
-            # Skip the digit scan only for a *validated* amount (Decimal(14,2) can be up to 12 digits).
-            # Any other value under an 'amount' key still gets scanned, so a PII-shaped value can't hide there.
-            if k == "amount" and isinstance(v, str) and _AMOUNT.match(v):
-                continue
-            _scan(v, f"{where}.{k}")
-    elif isinstance(obj, (list, tuple)):
-        for i, v in enumerate(obj):
-            _scan(v, f"{where}[{i}]")
-    elif isinstance(obj, str):
-        _scan_text(obj, where)
-    elif isinstance(obj, bool) or obj is None:
-        return  # booleans / null carry no digits (bool before int: bool is an int subclass)
-    elif isinstance(obj, (int, float)):
-        # Integers serialize to raw digits on disk (e.g. an identifier-shaped --seed in manifest.generator),
-        # so scan their string form too — the early-return here was the int-bypass hole.
-        _scan_text(str(obj), where)
-    else:  # fail-closed on anything the walker doesn't recognize
-        raise GuardError(f"unscannable type {type(obj).__name__} at {where}")
-
-
-def _scan_bytes(data: bytes, where: str) -> None:
-    # Scans compressed/hashed binary as latin-1 text for contiguous digit runs. This is safe only because
-    # generated files embed just the (validated) ref + a fixed title — if file content ever carries
-    # free-form text, revisit this (a pathological run in binary could also fail-closed for some seeds).
-    text = data.decode("latin-1", errors="replace")
-    m = _DIGIT_RUN_CONTIG.search(text)
-    if m:
-        raise GuardError(f"possible real identifier {m.group()!r} in file bytes at {where}")
 
 
 def _write_json(path: Path, payload: object) -> None:
