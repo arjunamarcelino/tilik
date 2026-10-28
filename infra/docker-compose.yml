@@ -75,11 +75,8 @@ services:
     # (`mc ready` waits, `mc mb --ignore-existing` is a no-op if the bucket exists).
     restart: on-failure
 
-  # --- Filled in for PROD in Prompt 14; local dev runs these from the terminal. ---
-  # web:       # TODO(Prompt 14): Next.js reviewer portal — behind Caddy; minimal NEXT_PUBLIC_* env only.
-  # api:       # TODO(Prompt 14): NestJS API — depends_on postgres (healthy) + minio; connects as tilik_app.
-  # detector:  # TODO(Prompt 14): Python detector worker — polls the outbox; connects as tilik_app.
-  # caddy:     # TODO(Prompt 14): reverse proxy, mounts ./Caddyfile, terminates TLS.
+  # web / api / detector / caddy run from the terminal in dev; they are added to this file for
+  # production in Prompt 14 (api + detector connect as tilik_app; Caddy fronts them, see ./Caddyfile).
 
 volumes:
   tilik-pgdata:
