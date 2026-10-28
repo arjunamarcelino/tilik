@@ -78,13 +78,13 @@ a secret with `NEXT_PUBLIC_`, and start the `web` process with a minimal allow-l
 
 - MinIO uses the `cgr.dev/chainguard/minio` mirror (Docker Hub's `minio/minio` was retired in 2026).
   It runs as non-root and has no in-container healthcheck, so `minio` shows `Up`; `minio-init` exiting
-  `0` is the readiness + bucket-created signal. The free tier only offers `:latest` — pin a digest if
-  you need reproducibility.
-- **Port 5432 collision:** if a local Postgres already listens on `localhost:5432` it shadows the
-  Compose one for host connections (`migrate` would hit the wrong DB). Stop it, or remap the Compose
-  host port.
+  `0` is the readiness + bucket-created signal. The image is pinned by digest in `docker-compose.yml`
+  (re-pin by re-pulling `:latest` and copying the new `@sha256:` — the free tier only tags `:latest`).
+- **Port collisions:** ports bind to `127.0.0.1` only. If local services already listen on `5432`
+  (Postgres) or `9000`/`9001` (MinIO), they shadow the Compose ones for host connections (`migrate`
+  would hit the wrong DB). Stop them, or remap the Compose host ports.
 - `docker-entrypoint-initdb.d` runs only on a fresh volume — on an existing `tilik-pgdata` volume the
-  `tilik_app` role is not recreated; `docker compose --env-file ../.env down -v` to re-init.
+  `tilik_app` role is not recreated; `./compose.sh down -v` to re-init.
 - Managed Postgres that forbids `CREATE DATABASE` needs a `SHADOW_DATABASE_URL` for `migrate:dev`; the
   local owner has `CREATEDB`, so the shadow DB just works. App services (web / api / detector) and the
   prod Compose + Caddy arrive in Prompt 14.
