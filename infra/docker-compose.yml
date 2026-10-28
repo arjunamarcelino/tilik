@@ -10,6 +10,11 @@
 
 name: tilik
 
+# MinIO image, pinned by digest for reproducibility (the Chainguard free tier only tags `:latest`).
+# The `minio` server and the `minio-init` client MUST run the same build — the anchor keeps them in sync.
+# Re-pin by re-pulling `cgr.dev/chainguard/minio:latest` and copying the new `@sha256:` digest here.
+x-minio-image: &minio-image cgr.dev/chainguard/minio@sha256:e70b2b1e74d79457f808710483bd726ff364529ca30736eaa15a6ab547d3a5a7
+
 services:
   postgres:
     image: postgres:16.15-alpine3.24
@@ -19,7 +24,7 @@ services:
       POSTGRES_DB: tilik
       APP_DB_PASSWORD: ${APP_DB_PASSWORD} # consumed by postgres/init/01-app-role.sh
     ports:
-      - '5432:5432'
+      - '127.0.0.1:5432:5432' # loopback only — do not expose the DB to the LAN
     volumes:
       - tilik-pgdata:/var/lib/postgresql/data
       - ./postgres/init:/docker-entrypoint-initdb.d:ro # runs once, on first init of an empty volume
@@ -31,18 +36,16 @@ services:
       start_period: 10s
 
   minio:
-    # NOTE: verify this tag still pulls — MinIO reportedly stopped publishing official images to
-    # Docker Hub/quay in 2026 (verified: `docker pull minio/minio` → repository does not exist). This
-    # uses the Chainguard mirror, which runs as non-root uid 65532 and bundles both `minio` and `mc`.
-    # Free tier offers only `:latest`; pin a digest or a dated tag if you have a Chainguard subscription.
-    image: cgr.dev/chainguard/minio:latest
+    # Chainguard mirror (Docker Hub's minio/minio was retired in 2026). Non-root uid 65532; bundles
+    # both `minio` and `mc`. Pinned by digest via the *minio-image anchor (see top of file).
+    image: *minio-image
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     ports:
-      - '9000:9000' # S3 API
-      - '9001:9001' # web console
+      - '127.0.0.1:9000:9000' # S3 API — loopback only
+      - '127.0.0.1:9001:9001' # web console — loopback only
     volumes:
       - tilik-minio-data:/data
     # No healthcheck: readiness is gated by the minio-init sidecar (`mc ready`). minio shows "Up".
@@ -51,7 +54,7 @@ services:
   # that Exited(0) is the readiness + bucket-created signal (minio itself never reports "healthy").
   # Reuses the minio image (it ships `sh` + `mc`); MC_CONFIG_DIR points at a writable dir for uid 65532.
   minio-init:
-    image: cgr.dev/chainguard/minio:latest
+    image: *minio-image
     depends_on:
       minio:
         condition: service_started
@@ -68,7 +71,9 @@ services:
         mc ready local &&
         mc mb --ignore-existing local/"$${MINIO_BUCKET}" &&
         echo "bucket ready: $${MINIO_BUCKET}"
-    restart: 'no'
+    # Retry on non-zero exit so a slow first MinIO boot self-heals; the command is idempotent
+    # (`mc ready` waits, `mc mb --ignore-existing` is a no-op if the bucket exists).
+    restart: on-failure
 
   # --- Filled in for PROD in Prompt 14; local dev runs these from the terminal. ---
   # web:       # TODO(Prompt 14): Next.js reviewer portal — behind Caddy; minimal NEXT_PUBLIC_* env only.
