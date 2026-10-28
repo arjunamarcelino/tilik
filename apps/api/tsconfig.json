@@ -1,4 +1,15 @@
 {
   "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // NestJS is a CommonJS consumer of @tilik/db (generated with moduleFormat: cjs). The repo base is
+    // ESNext/bundler/noEmit — override to CJS + node16 so Prisma 7's `exports` map resolves, and enable
+    // the decorator metadata Nest DI + class-validator rely on.
+    "module": "node16",
+    "moduleResolution": "node16",
+    "target": "ES2022",
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "noEmit": true
+  },
   "include": ["src"]
 }

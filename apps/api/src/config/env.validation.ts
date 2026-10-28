@@ -1,0 +1,77 @@
+import { plainToInstance } from 'class-transformer';
+import {
+  IsEmail,
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+  MinLength,
+  validateSync,
+} from 'class-validator';
+
+export enum NodeEnv {
+  development = 'development',
+  test = 'test',
+  production = 'production',
+}
+
+/**
+ * The API's environment contract. Only the vars the API actually consumes are validated — the single
+ * repo-root .env also carries MinIO/Anthropic/owner-DATABASE_URL that the API must NOT use, so unknown
+ * vars are ignored (never rejected). NODE_ENV has no default: an unset value fails the boot closed, so
+ * production hardening (seed-password requirement, no dev stub) can never silently fall into dev mode.
+ */
+export class EnvironmentVariables {
+  @IsEnum(NodeEnv)
+  NODE_ENV!: NodeEnv;
+
+  @IsInt()
+  @Min(1)
+  @Max(65535)
+  API_PORT!: number;
+
+  // Runtime CRUD connection — the NON-OWNER tilik_app role. Never DATABASE_URL (owner): the append-only
+  // grant only binds a non-owner. PrismaService also asserts current_user = 'tilik_app' at boot.
+  @IsString()
+  APP_DATABASE_URL!: string;
+
+  // ≥ 44 chars ≈ 32 random bytes of base64 (openssl rand -base64 32). MinLength counts characters.
+  @IsString()
+  @MinLength(44)
+  JWT_SECRET!: string;
+
+  @IsString()
+  JWT_EXPIRES_IN = '60m';
+
+  // The single web origin allowed by CORS (e.g. http://localhost:3000).
+  @IsString()
+  CORS_ORIGIN!: string;
+
+  @IsOptional()
+  @IsEmail()
+  SEED_ADMIN_EMAIL?: string;
+
+  @IsOptional()
+  @IsString()
+  SEED_ADMIN_PASSWORD?: string;
+
+  @IsOptional()
+  @IsEmail()
+  SEED_REVIEWER_EMAIL?: string;
+
+  @IsOptional()
+  @IsString()
+  SEED_REVIEWER_PASSWORD?: string;
+}
+
+export function validate(raw: Record<string, unknown>): EnvironmentVariables {
+  // enableImplicitConversion coerces the string env values (e.g. API_PORT) to their declared types.
+  const config = plainToInstance(EnvironmentVariables, raw, { enableImplicitConversion: true });
+  const errors = validateSync(config, { skipMissingProperties: false });
+  if (errors.length > 0) {
+    throw new Error(`Invalid environment configuration:\n${errors.toString()}`);
+  }
+  return config;
+}
