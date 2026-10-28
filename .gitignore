@@ -17,6 +17,10 @@ dist/
 .venv/
 __pycache__/
 *.pyc
+.pytest_cache/
+
+# Synthetic data generator output bundle (Prompt 04) — regenerate with generate.py
+data/synthetic/out/
 
 # Prisma generated client (Prompt 02) — the prisma-client generator emits TS source under src/
 packages/db/src/generated/

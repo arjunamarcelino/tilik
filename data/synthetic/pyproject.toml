@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tilik-synthetic"
+version = "0.1.0"
+description = "Tilik synthetic JKN data generator — fake-but-realistic episodes/claims/evidence with seeded fraud + exception cases. Synthetic data only."
+requires-python = ">=3.11"
+# Exact pin (not ~=/>=): byte-for-byte reproducibility is a hard requirement and Faker makes no
+# cross-version output guarantee. Re-pin deliberately and regenerate checksums.txt when bumping.
+dependencies = ["Faker==40.43.0"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+tilik-synth = "tilik_synth.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["tilik_synth"]

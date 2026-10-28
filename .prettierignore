@@ -6,6 +6,9 @@ docs
 coverage
 .venv
 __pycache__
+.pytest_cache
 *.py
 **/generated/
+# Synthetic data generator output bundle (generated; not hand-formatted)
+data/synthetic/out/
 
