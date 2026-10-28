@@ -31,8 +31,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const ctx = host.switchToHttp();
     const res = ctx.getResponse<Response>();
     const req = ctx.getRequest<Request & { id?: string }>();
-    const correlationId =
-      (req.headers['x-correlation-id'] as string | undefined) ?? req.id ?? randomUUID();
+    // req.id is set by nestjs-pino's genReqId (a validated/minted UUID); fall back only defensively.
+    const correlationId = req.id ?? randomUUID();
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let code = 'INTERNAL';
