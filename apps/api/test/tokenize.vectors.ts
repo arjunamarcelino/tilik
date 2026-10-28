@@ -5,8 +5,7 @@
 // any drift on either side is caught. Runnable without a test runner: `pnpm --filter @tilik/api test:vectors`.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { resolve } from 'node:path';
 import { claimVersionContentHash, type ClaimContentInput } from '../src/imports/canonical';
 import { patientToken } from '../src/imports/tokenize';
 
@@ -16,8 +15,15 @@ interface Vectors {
   contentHashes: Array<{ input: ClaimContentInput; expected: string }>;
 }
 
-const here = dirname(fileURLToPath(import.meta.url));
-const fixturePath = resolve(here, '..', '..', '..', 'test-vectors', 'tokenization.vectors.json');
+// apps/api is CommonJS (no "type":"module") — use __dirname, consistent with src/scripts/import-seed.ts.
+const fixturePath = resolve(
+  __dirname,
+  '..',
+  '..',
+  '..',
+  'test-vectors',
+  'tokenization.vectors.json',
+);
 const vectors = JSON.parse(readFileSync(fixturePath, 'utf8')) as Vectors;
 
 let checked = 0;
