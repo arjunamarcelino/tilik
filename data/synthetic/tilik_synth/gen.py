@@ -58,7 +58,12 @@ _FORBIDDEN_FAKER = (
 
 
 class SafeFaker:
-    """Composition wrapper exposing only the allow-listed Faker methods."""
+    """Composition wrapper exposing only the allow-listed Faker methods.
+
+    Note: ``self._faker`` is reachable and is NOT a hard security boundary — a caller could write
+    ``gen.faker._faker.ssn()`` to bypass the allow-list. The real guarantee is that call sites only use the
+    allow-listed methods (grep-enforced in review); this wrapper makes the default path safe, not sandboxed.
+    """
 
     def __init__(self, locale: str, seed: int):
         # A forbidden provider must never be allow-listed (defence in depth; catches a future edit).

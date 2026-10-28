@@ -302,6 +302,9 @@ def _scan(obj: object, where: str) -> None:
 
 
 def _scan_bytes(data: bytes, where: str) -> None:
+    # Scans compressed/hashed binary as latin-1 text for contiguous digit runs. This is safe only because
+    # generated files embed just the (validated) ref + a fixed title — if file content ever carries
+    # free-form text, revisit this (a pathological run in binary could also fail-closed for some seeds).
     text = data.decode("latin-1", errors="replace")
     m = _DIGIT_RUN_CONTIG.search(text)
     if m:
