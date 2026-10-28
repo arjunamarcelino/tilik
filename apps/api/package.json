@@ -8,7 +8,8 @@
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main.js",
     "typecheck": "tsc --noEmit",
-    "import:seed": "node --import tsx src/scripts/import-seed.ts"
+    "import:seed": "node --import tsx src/scripts/import-seed.ts",
+    "test:vectors": "node --import tsx test/tokenize.vectors.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",

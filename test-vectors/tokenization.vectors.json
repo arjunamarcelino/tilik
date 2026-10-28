@@ -1,0 +1,49 @@
+{
+  "_spec": "patientToken = HMAC_SHA256(utf8(hmacKey), utf8('patient:' + upper(trim(NFC(patientRef))))) hex; contentHash = sha256(utf8(RFC8785-JCS(content))) hex. The Python detector (Prompt 07) must reproduce these.",
+  "hmacKey": "tilik-golden-vector-key-do-not-use-in-production",
+  "patientTokens": [
+    {
+      "patientRef": "SYN-PATIENT-0001",
+      "expected": "a07b568fabe256008811912d2d97e660943614b809ccb3c104671370d65e6792"
+    },
+    {
+      "patientRef": "  syn-patient-0001  ",
+      "expected": "a07b568fabe256008811912d2d97e660943614b809ccb3c104671370d65e6792",
+      "note": "trim + upper normalization"
+    }
+  ],
+  "contentHashes": [
+    {
+      "input": {
+        "inacbgCode": "O-2-76-0",
+        "amount": "185000.00",
+        "patientToken": "a07b568fabe256008811912d2d97e660943614b809ccb3c104671370d65e6792",
+        "lines": [
+          {
+            "type": "DIAGNOSIS",
+            "code": "E11.9",
+            "sequence": 1,
+            "amount": null
+          }
+        ]
+      },
+      "expected": "97350c37419983ffa58192520997e679e43fcaa544bde6c5d4a82eb600f22496"
+    },
+    {
+      "input": {
+        "inacbgCode": "O-2-76-0",
+        "amount": "185000.0",
+        "patientToken": "a07b568fabe256008811912d2d97e660943614b809ccb3c104671370d65e6792",
+        "lines": [
+          {
+            "type": "DIAGNOSIS",
+            "code": "E11.9",
+            "sequence": 1
+          }
+        ]
+      },
+      "expected": "97350c37419983ffa58192520997e679e43fcaa544bde6c5d4a82eb600f22496",
+      "note": "amount scale-normalized → same hash as above"
+    }
+  ]
+}
