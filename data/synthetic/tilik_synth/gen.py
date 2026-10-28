@@ -15,10 +15,14 @@ import hashlib
 import random
 import struct
 import zlib
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import timedelta
+from typing import Any, TypeVar
 
 from faker import Faker
+
+T = TypeVar("T")
 
 from . import config
 
@@ -71,7 +75,7 @@ class SafeFaker:
         if hasattr(self._faker, "nik"):
             raise RuntimeError("A NIK-capable Faker provider is registered; refusing to generate.")
 
-    def __getattr__(self, name: str):
+    def __getattr__(self, name: str) -> Any:
         if name in _ALLOWED_FAKER:
             return getattr(self._faker, name)
         raise AttributeError(
@@ -96,7 +100,7 @@ class Gen:
         self._counters[prefix] = self._counters.get(prefix, 0) + 1
         return f"{prefix}_{self._counters[prefix]:04d}"
 
-    def pick(self, seq):
+    def pick(self, seq: Sequence[T]) -> T:
         """Deterministic element pick that avoids random.choice's version-coupled algorithm."""
         return seq[self.rng.randrange(len(seq))]
 

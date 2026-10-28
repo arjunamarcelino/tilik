@@ -20,7 +20,9 @@ def _num(ref: str) -> str:
     return ref.split("_", 1)[1]
 
 
-def _new_episode(bundle: Bundle, gen: Gen, *, label: dict, patient_ref: str | None = None, day: int | None = None):
+def _new_episode(
+    bundle: Bundle, gen: Gen, *, label: dict, patient_ref: str | None = None, day: int | None = None
+) -> tuple[str, str, int]:
     ep_ref = gen.next_ref("ep")
     if patient_ref is None:
         patient_ref = f"SYN-PATIENT-{_num(gen.next_ref('pat'))}"
@@ -37,7 +39,9 @@ def _new_episode(bundle: Bundle, gen: Gen, *, label: dict, patient_ref: str | No
     return ep_ref, patient_ref, day
 
 
-def _claim(bundle: Bundle, gen: Gen, ep_ref: str, *, lines: list[ClaimLine], amount: str, day: int, inacbg: str | None = None):
+def _claim(
+    bundle: Bundle, gen: Gen, ep_ref: str, *, lines: list[ClaimLine], amount: str, day: int, inacbg: str | None = None
+) -> str:
     cv_ref = gen.next_ref("cv")
     bundle.add_claim(
         ClaimVersion(
@@ -64,7 +68,7 @@ def _proc_line(proc: config.Procedure, amount: str) -> ClaimLine:
     return ClaimLine(type=config.PROCEDURE, code=proc.code, sequence=1, description=proc.label, amount=amount)
 
 
-def _inline_evidence(bundle: Bundle, gen: Gen, ep_ref: str, kind: str, payload: dict, *, day: int, source: str):
+def _inline_evidence(bundle: Bundle, gen: Gen, ep_ref: str, kind: str, payload: dict, *, day: int, source: str) -> str:
     ev_ref = gen.next_ref("ev")
     bundle.add_evidence(
         EvidenceRecord(
@@ -81,7 +85,9 @@ def _inline_evidence(bundle: Bundle, gen: Gen, ep_ref: str, kind: str, payload: 
     return ev_ref
 
 
-def _file_evidence(bundle: Bundle, gen: Gen, ep_ref: str, kind: str, *, day: int, source: str, title: str, as_pdf: bool = False):
+def _file_evidence(
+    bundle: Bundle, gen: Gen, ep_ref: str, kind: str, *, day: int, source: str, title: str, as_pdf: bool = False
+) -> str:
     ev_ref = gen.next_ref("ev")
     data = pdf_bytes(ev_ref, title) if as_pdf else png_bytes(ev_ref)
     ext = "pdf" if as_pdf else "png"
@@ -101,13 +107,13 @@ def _file_evidence(bundle: Bundle, gen: Gen, ep_ref: str, kind: str, *, day: int
     return ev_ref
 
 
-def _link(bundle: Bundle, gen: Gen, ev_ref: str, cv_ref: str | None, relation: str, note: str | None = None):
+def _link(bundle: Bundle, gen: Gen, ev_ref: str, cv_ref: str | None, relation: str, note: str | None = None) -> None:
     bundle.add_link(
         EvidenceLink(ref=gen.next_ref("el"), evidenceRef=ev_ref, claimVersionRef=cv_ref, relation=relation, note=note)
     )
 
 
-def _soap_payload(gen: Gen, name: str, mrn: str, variant: int | None = None):
+def _soap_payload(gen: Gen, name: str, mrn: str, variant: int | None = None) -> dict:
     from .narratives import soap_template_narrative
 
     return {"format": "soap", "docType": "resume medis", "narrative": soap_template_narrative(gen, name, mrn, variant)}
