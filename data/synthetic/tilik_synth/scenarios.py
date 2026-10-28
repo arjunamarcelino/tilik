@@ -7,7 +7,7 @@ manifest label on every episode records ``expectFinding`` so a later harness can
 from __future__ import annotations
 
 from . import config
-from .bundle import Bundle, ClaimLine, ClaimVersion, Episode, EvidenceLink, EvidenceRecord
+from .bundle import Bundle, ClaimLine, ClaimVersion, Episode, EvidenceLink, EvidenceRecord, Label
 from .gen import Gen, pdf_bytes, png_bytes
 from .narratives import clone_narrative, soap_template_narrative
 
@@ -22,7 +22,7 @@ def _num(ref: str) -> str:
 
 
 def _new_episode(
-    bundle: Bundle, gen: Gen, *, label: dict, patient_ref: str | None = None, day: int | None = None
+    bundle: Bundle, gen: Gen, *, label: Label, patient_ref: str | None = None, day: int | None = None
 ) -> tuple[str, str, int]:
     ep_ref = gen.next_ref("ep")
     if patient_ref is None:

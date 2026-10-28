@@ -11,8 +11,21 @@ import re
 import shutil
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import TypedDict
 
 from . import config
+
+
+class Label(TypedDict, total=False):
+    """Per-episode ground-truth label stored in manifest.labels. ``category`` + ``expectFinding`` are always
+    set; the rest depend on the family (total=False keeps them optional, incl. relatedRefs added post-hoc)."""
+
+    category: str
+    expectFinding: bool
+    detector: str
+    note: str
+    clusterId: str
+    relatedRefs: list[str]
 
 # --- Guard patterns ------------------------------------------------------------------------------
 
@@ -85,7 +98,7 @@ class EvidenceRecord:
     ref: str
     episodeRef: str
     kind: str
-    payload: dict | None
+    payload: dict[str, object] | None
     file: str | None
     capturedAt: str
     source: str
@@ -110,12 +123,12 @@ class Bundle:
     claims: list[ClaimVersion] = field(default_factory=list)
     evidence: list[EvidenceRecord] = field(default_factory=list)
     links: list[EvidenceLink] = field(default_factory=list)
-    labels: dict[str, dict] = field(default_factory=dict)
+    labels: dict[str, Label] = field(default_factory=dict)
     _files: dict[str, bytes] = field(default_factory=dict)
 
     # --- accumulation --------------------------------------------------------
 
-    def add_episode(self, ep: Episode, *, label: dict) -> str:
+    def add_episode(self, ep: Episode, *, label: Label) -> str:
         """Add an episode; a ground-truth ``label`` is REQUIRED (keeps labels complete by construction)."""
         self.episodes.append(ep)
         self.labels[ep.ref] = label
