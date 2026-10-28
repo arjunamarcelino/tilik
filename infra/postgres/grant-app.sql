@@ -22,3 +22,9 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO tilik_app;
 -- — the real TRUNCATE block is the statement-level triggers in the init migration.
 REVOKE UPDATE, DELETE, TRUNCATE ON "AuditEvent", "EvidenceRecord", "ClaimLine" FROM tilik_app;
 REVOKE DELETE, TRUNCATE ON "ClaimVersion" FROM tilik_app;
+
+-- Prompt 06: StagingRecord (raw "mentah") and ImportBatch are MUTABLE control tables (the app sets
+-- accepted/rejectionReason, status/counts/completedAt) — so tilik_app keeps SELECT/INSERT/UPDATE — but
+-- they are the submission + provenance anchors, so DELETE/TRUNCATE are withheld: the app must never be
+-- able to erase what was submitted or which batch minted a row. (No append-only trigger on them.)
+REVOKE DELETE, TRUNCATE ON "StagingRecord", "ImportBatch" FROM tilik_app;
