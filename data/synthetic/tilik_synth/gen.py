@@ -28,18 +28,8 @@ from . import config
 
 # Faker methods the generator is allowed to call. Everything else raises — this is the real protection
 # against emitting a real address / postcode / plate / phone, none of which a digit-regex would catch.
-_ALLOWED_FAKER = frozenset(
-    {
-        "name",
-        "first_name",
-        "last_name",
-        "first_name_male",
-        "first_name_female",
-        "word",
-        "words",
-        "sentence",
-    }
-)
+# Kept to exactly what the generator uses (only name()); a tighter allow-list is a tighter PII surface.
+_ALLOWED_FAKER = frozenset({"name"})
 
 # Providers that must never be reachable. The allow-list __getattr__ already denies everything not
 # explicitly allowed; this list is the defence-in-depth backstop asserted disjoint from the allow-list at
