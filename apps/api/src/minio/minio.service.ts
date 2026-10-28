@@ -8,7 +8,6 @@ import type { EnvironmentVariables } from '../config/env.validation';
 export interface StoredObject {
   objectKey: string;
   sha256: string;
-  size: number;
 }
 
 /**
@@ -59,6 +58,6 @@ export class MinioService implements OnModuleInit {
       'Content-Type': contentType,
       'x-amz-meta-sha256': sha256,
     });
-    return { objectKey, sha256, size: body.length };
+    return { objectKey, sha256 };
   }
 }

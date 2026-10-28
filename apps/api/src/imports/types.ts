@@ -7,14 +7,7 @@ import type {
 
 export type RecordType = 'episode' | 'claim-version' | 'evidence-record' | 'evidence-link';
 
-export const RECORD_TYPES: readonly RecordType[] = [
-  'episode',
-  'claim-version',
-  'evidence-record',
-  'evidence-link',
-];
-
-/** One incoming bundle record, tagged with its source file + position, as staged verbatim (pre-redaction). */
+/** One incoming bundle record, tagged with its source file + a batch-global position, pre-redaction. */
 export interface RawRecord {
   recordType: RecordType;
   position: number;
@@ -28,24 +21,26 @@ export interface FieldError {
   constraint: string;
 }
 
+/** A rejected record (DTO-invalid, duplicate, dangling ref, or missing upload). Single shared shape. */
+export interface Rejection {
+  position: number;
+  recordType: RecordType;
+  ref: string;
+  errors: FieldError[];
+}
+
 /** Per-record outcome. Discriminated by `kind` so the resolved DTO type is recovered without `any`. */
 export type RowResult =
   | { kind: 'episode'; position: number; ref: string; dto: EpisodeDto }
   | { kind: 'claim-version'; position: number; ref: string; dto: ClaimVersionDto }
   | { kind: 'evidence-record'; position: number; ref: string; dto: EvidenceRecordDto }
   | { kind: 'evidence-link'; position: number; ref: string; dto: EvidenceLinkDto }
-  | {
-      kind: 'rejected';
-      position: number;
-      ref: string;
-      recordType: RecordType;
-      errors: FieldError[];
-    };
+  | ({ kind: 'rejected' } & Rejection);
 
 /** HTTP response body for POST /v1/imports and GET /v1/imports/:id. */
 export interface ImportResult {
   batchId: string;
   status: 'PENDING' | 'PROCESSING' | 'DONE' | 'FAILED' | 'PARTIAL';
   summary: { received: number; accepted: number; rejected: number };
-  rejected: Array<{ position: number; recordType: RecordType; ref: string; errors: FieldError[] }>;
+  rejected: Rejection[];
 }

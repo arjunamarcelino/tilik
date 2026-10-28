@@ -67,7 +67,9 @@ export class EvidenceRecordDto {
   @IsOptional() @IsString() source?: string | null;
   // payload XOR file is enforced in record-validation.ts (the DB CHECK is only at-least-one).
   @IsOptional() @IsObject() payload?: Record<string, unknown> | null;
-  @IsOptional() @IsString() file?: string | null;
+  // "files/<name>.<png|pdf>" — the path shape + extension allow-list are validated here, so the upload path
+  // never derives a Content-Type or object key from an unvalidated/non-allowlisted file reference.
+  @IsOptional() @Matches(/^files\/[A-Za-z0-9._-]+\.(png|pdf)$/) file?: string | null;
 }
 
 export class EvidenceLinkDto {

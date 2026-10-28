@@ -6,21 +6,23 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createHash } from 'node:crypto';
 import { AUDIT_ACTION, OUTBOX_JOB_TYPE } from '@tilik/shared/constants';
 import { Prisma, type ImportBatch } from '@tilik/db';
 import { Role } from '@tilik/shared';
 import { AuditService } from '../audit/audit.service';
+import { isUniqueViolation } from '../common/prisma-errors';
+import { fromJsonValue, toJsonValue } from '../common/prisma-json';
 import type { AuthenticatedUser } from '../common/types/auth';
 import type { EnvironmentVariables } from '../config/env.validation';
 import { MinioService, type StoredObject } from '../minio/minio.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { claimVersionContentHash, evidencePayloadContentHash } from './canonical';
-import { flattenManifest, type ImportManifest, isImportManifest } from './manifest';
+import { canonicalDigest, claimVersionContentHash, evidencePayloadContentHash } from './canonical';
+import { REF_RE } from './dto/bundle-records.dto';
+import { flattenManifest, isImportManifest } from './manifest';
 import { validateAll } from './record-validation';
 import { resolve, type ResolvedEpisode } from './ref-resolver';
 import { patientToken } from './tokenize';
-import type { ImportResult, RawRecord } from './types';
+import type { ImportResult, RawRecord, Rejection, RowResult } from './types';
 
 // A batch wedged in PROCESSING longer than this (crash mid-request) is reclaimable on replay.
 const STALE_PROCESSING_MS = 5 * 60 * 1000;
@@ -48,8 +50,8 @@ export class ImportService {
     key: string,
     files: MultipartFile[],
   ): Promise<ImportResult> {
-    // 1. Claim the per-actor idempotency key. The unique (uploadedBy, idempotencyKey) is the concurrency
-    //    primitive: exactly one INSERT wins; a duplicate branches to replay / 409 / stale-reclaim.
+    // Claim the per-actor idempotency key. UNIQUE(uploadedBy, idempotencyKey) is the concurrency primitive:
+    // exactly one INSERT wins; a duplicate branches to replay / 409 / stale-reclaim.
     let batch: ImportBatch;
     try {
       batch = await this.prisma.importBatch.create({
@@ -63,20 +65,19 @@ export class ImportService {
         },
       });
     } catch (err) {
-      if (isP2002(err)) return this.replayOrConflict(user.userId, key);
+      if (isUniqueViolation(err)) return this.replayOrConflict(user.userId, key);
       throw err;
     }
 
-    // 2. Durable "an import began" record (actor + batch + time) BEFORE any domain state can land, so a
-    //    crash before finalize never leaves committed claims without an audit trail.
-    await this.audit.record({
-      actor: user.userId,
-      action: AUDIT_ACTION.IMPORT_STARTED,
-      targetType: 'ImportBatch',
-      targetId: batch.id,
-    });
-
     try {
+      // Durable "an import began" record (actor + batch + time) BEFORE any domain state can land. Inside the
+      // try so that if even this write fails, the batch is marked FAILED rather than wedged in PROCESSING.
+      await this.audit.record({
+        actor: user.userId,
+        action: AUDIT_ACTION.IMPORT_STARTED,
+        targetType: 'ImportBatch',
+        targetId: batch.id,
+      });
       return await this.process(user, batch.id, files);
     } catch (err) {
       await this.failBatch(batch.id, err);
@@ -89,7 +90,7 @@ export class ImportService {
     batchId: string,
     files: MultipartFile[],
   ): Promise<ImportResult> {
-    // Parse the manifest part.
+    // 1. Parse the manifest part.
     const manifestPart = files.find((f) => f.fieldname === 'manifest');
     if (!manifestPart) throw new BadRequestException({ code: 'MANIFEST_MISSING' });
     let manifest: unknown;
@@ -101,233 +102,254 @@ export class ImportService {
     if (!isImportManifest(manifest))
       throw new BadRequestException({ code: 'MANIFEST_INVALID_SHAPE' });
 
-    // Upload declared file evidence to MinIO (manifest-gated, ref-allowlisted, ext-allowlisted).
-    const fileObjects = await this.uploadEvidenceFiles(batchId, manifest, files);
-
-    // Stage raw (redacted) + validate + resolve.
+    // 2. Validate BEFORE staging (so no raw/unvalidated identifier is ever persisted), then resolve.
     const records = flattenManifest(manifest);
-    await this.stageRedacted(batchId, records);
-    await this.prisma.importBatch.update({
-      where: { id: batchId },
-      data: { totalRecords: records.length },
-    });
-
     const results = await validateAll(records);
-    const { episodes, acceptedRefs, rejections } = resolve(results, fileObjects);
+    const partByRef = new Map<string, Buffer>();
+    for (const f of files) if (f.fieldname !== 'manifest') partByRef.set(f.fieldname, f.buffer);
+    const { episodes, acceptedRefs, rejections } = resolve(results, new Set(partByRef.keys()));
 
-    // Mark staging outcomes: accepted in bulk, each rejection with its {field,constraint} reason.
-    if (acceptedRefs.size > 0) {
-      await this.prisma.stagingRecord.updateMany({
-        where: { importBatchId: batchId, ref: { in: [...acceptedRefs] } },
-        data: { accepted: true },
-      });
-    }
-    for (const r of rejections) {
-      await this.prisma.stagingRecord.updateMany({
-        where: { importBatchId: batchId, ref: r.ref },
-        // FieldError[] is JSON-shaped but lacks the index signature Prisma's InputJsonValue wants.
-        data: { rejectionReason: r.errors as unknown as Prisma.InputJsonValue },
-      });
-    }
+    // 3. Compute each accepted episode's patientToken ONCE (reused for staging redaction + content hashing).
+    const tokenByEpisodeRef = new Map<string, string>();
+    for (const ep of episodes)
+      tokenByEpisodeRef.set(ep.dto.ref, patientToken(ep.dto.patientRef, this.hmacKey));
 
-    // Write each episode atomically (canonical rows + its DETECT_EPISODE outbox job).
-    for (const episode of episodes) await this.writeEpisode(batchId, episode);
+    // 4. Upload ONLY accepted file-backed evidence to MinIO (no orphans from rejected records).
+    const objects = await this.uploadAcceptedEvidence(batchId, episodes, partByRef);
 
-    return this.finalize(
-      user,
+    // 5. Build staging rows (validated + redacted) with their outcome inline — no post-hoc UPDATE, so nothing
+    //    is keyed on `ref` (no cross-contamination) and rejected bodies are never stored.
+    const rows = this.buildStagingRows(
       batchId,
-      acceptedRefs.size,
-      rejections.length,
-      records.length,
+      records,
+      results,
+      acceptedRefs,
       rejections,
+      tokenByEpisodeRef,
     );
-  }
+    const accepted = acceptedRefs.size;
+    const rejected = records.length - accepted;
 
-  private async uploadEvidenceFiles(
-    batchId: string,
-    manifest: ImportManifest,
-    files: MultipartFile[],
-  ): Promise<Map<string, StoredObject>> {
-    // ref → {ext, contentType}, for evidence records that declare an allowlisted file (the only uploads we accept).
-    const declared = new Map<string, { ext: string; contentType: string }>();
-    for (const ev of manifest.evidenceRecords) {
-      const ref = ev.ref;
-      const file = ev.file;
-      if (typeof ref !== 'string' || typeof file !== 'string') continue;
-      const ext = file.split('.').pop()?.toLowerCase() ?? '';
-      const contentType = CONTENT_TYPE[ext];
-      if (contentType) declared.set(ref, { ext, contentType });
-    }
-
-    const out = new Map<string, StoredObject>();
-    for (const part of files) {
-      const ref = part.fieldname;
-      if (ref === 'manifest') continue;
-      const spec = declared.get(ref);
-      // Drop parts that aren't a manifest-declared, allowlisted, non-duplicate evidence file. (A hostile
-      // ref can't reach here: declared keys come from the manifest and REF_RE-validated DTOs.)
-      if (!spec || out.has(ref)) continue;
-      const stored = await this.minio.putObject(
-        `imports/${batchId}/${ref}.${spec.ext}`,
-        part.buffer,
-        spec.contentType,
-      );
-      out.set(ref, stored);
-    }
-    return out;
-  }
-
-  /** Stage every record verbatim EXCEPT the raw patientRef, which is replaced by its token. rawHash is the
-   *  sha256 of the original record so "exactly what was submitted" is provable without retaining the id. */
-  private async stageRedacted(batchId: string, records: RawRecord[]): Promise<void> {
-    const rows = records.map((r) => {
-      const rawHash = createHash('sha256').update(JSON.stringify(r.raw)).digest('hex');
-      let raw: Prisma.InputJsonValue = r.raw as Prisma.InputJsonValue;
-      if (r.recordType === 'episode' && typeof r.raw.patientRef === 'string') {
-        raw = { ...r.raw, patientRef: patientToken(r.raw.patientRef, this.hmacKey) };
-      }
-      return {
-        importBatchId: batchId,
-        recordType: r.recordType,
-        position: r.position,
-        ref: r.ref,
-        raw,
-        rawHash,
-      };
-    });
-    await this.prisma.stagingRecord.createMany({ data: rows });
-  }
-
-  private async writeEpisode(batchId: string, ep: ResolvedEpisode): Promise<void> {
-    const token = patientToken(ep.dto.patientRef, this.hmacKey);
-    await this.prisma.$transaction(
+    // 6. ONE transaction: staging + canonical rows + per-episode DETECT_EPISODE outbox jobs + finalize + audit.
+    //    A failure rolls back EVERYTHING → FAILED truly means nothing committed (no orphan detect jobs, counts
+    //    stay consistent). MinIO uploads (step 4) are the only non-transactional side effect; a rollback leaves
+    //    their objects orphaned under imports/<batchId>/ (documented; GC is Prompt 14).
+    const batch = await this.prisma.$transaction(
       async (tx) => {
-        await tx.episode.create({
+        await tx.stagingRecord.createMany({ data: rows });
+        for (const ep of episodes) {
+          await this.writeEpisode(
+            tx,
+            batchId,
+            ep,
+            tokenByEpisodeRef.get(ep.dto.ref) ?? '',
+            objects,
+          );
+        }
+        const b = await tx.importBatch.update({
+          where: { id: batchId },
           data: {
-            id: ep.id,
-            patientToken: token,
-            facilityId: ep.dto.facilityId,
-            startedAt: new Date(ep.dto.startedAt),
-            endedAt: ep.dto.endedAt ? new Date(ep.dto.endedAt) : null,
-            importBatchId: batchId,
+            status: 'DONE', // "PARTIAL" is derived at the API from rejected>0 (D8 — no such JobStatus)
+            totalRecords: records.length,
+            acceptedRecords: accepted,
+            rejectedRecords: rejected,
+            completedAt: new Date(),
           },
         });
-
-        // D8: plain insert at version=1, isCurrent defaults true — no advisory lock / supersede path.
-        for (const claim of ep.claims) {
-          await tx.claimVersion.create({
-            data: {
-              id: claim.id,
-              episodeId: ep.id,
-              version: claim.dto.version,
-              claimNo: claim.dto.claimNo,
-              inacbgCode: claim.dto.inacbgCode,
-              amount: new Prisma.Decimal(claim.dto.amount),
-              contentHash: claimVersionContentHash({
-                inacbgCode: claim.dto.inacbgCode,
-                amount: claim.dto.amount,
-                patientToken: token,
-                lines: claim.dto.lines,
-              }),
-              status: claim.dto.status,
-              submittedAt: new Date(claim.dto.submittedAt),
-              importBatchId: batchId,
-            },
-          });
-          if (claim.dto.lines.length > 0) {
-            await tx.claimLine.createMany({
-              data: claim.dto.lines.map((l) => ({
-                claimVersionId: claim.id,
-                type: l.type,
-                code: l.code,
-                sequence: l.sequence,
-                description: l.description ?? null,
-                amount: l.amount == null ? null : new Prisma.Decimal(l.amount),
-              })),
-            });
-          }
-        }
-
-        if (ep.evidence.length > 0) {
-          await tx.evidenceRecord.createMany({
-            data: ep.evidence.map((e) => ({
-              id: e.id,
-              episodeId: ep.id,
-              kind: e.dto.kind,
-              objectKey: e.object?.objectKey ?? null,
-              payload: e.object ? Prisma.DbNull : (e.dto.payload as Prisma.InputJsonValue),
-              contentHash: e.object
-                ? e.object.sha256
-                : evidencePayloadContentHash({
-                    kind: e.dto.kind,
-                    source: e.dto.source ?? null,
-                    capturedAt: e.dto.capturedAt,
-                    payload: e.dto.payload ?? null,
-                  }),
-              ingestedBy: e.dto.ingestedBy ?? null,
-              source: e.dto.source ?? null,
-              capturedAt: new Date(e.dto.capturedAt),
-              importBatchId: batchId,
-            })),
-          });
-        }
-
-        if (ep.links.length > 0) {
-          await tx.evidenceLink.createMany({
-            data: ep.links.map((l) => ({
-              evidenceId: l.evidenceId,
-              claimVersionId: l.claimVersionId,
-              relation: l.dto.relation,
-              note: l.dto.note ?? null,
-            })),
-          });
-        }
-
-        // Same transaction as the canonical rows: no episode lands without its detection job.
-        await tx.outboxJob.create({
-          data: {
-            type: OUTBOX_JOB_TYPE.DETECT_EPISODE,
-            status: 'PENDING',
-            payload: { v: 1, episodeId: ep.id, importBatchId: batchId },
-          },
+        await this.audit.recordInTx(tx, {
+          actor: user.userId,
+          action: AUDIT_ACTION.IMPORT,
+          targetType: 'ImportBatch',
+          targetId: batchId,
+          metadata: { accepted, rejected, total: records.length }, // bounded, counts-only (no PII)
         });
+        return b;
       },
       {
-        timeout: 30_000,
+        timeout: 60_000,
         maxWait: 10_000,
         isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
       },
     );
+
+    return this.toResult(batch, records.length, rejections);
   }
 
-  private async finalize(
-    user: AuthenticatedUser,
+  private async uploadAcceptedEvidence(
     batchId: string,
-    accepted: number,
-    rejected: number,
-    received: number,
-    rejections: ImportResult['rejected'],
-  ): Promise<ImportResult> {
-    const batch = await this.prisma.$transaction(async (tx) => {
-      const b = await tx.importBatch.update({
-        where: { id: batchId },
-        data: {
-          status: 'DONE', // "PARTIAL" is derived at the API from rejected>0 (D8 — no such JobStatus)
-          acceptedRecords: accepted,
-          rejectedRecords: rejected,
-          completedAt: new Date(),
-        },
-      });
-      await this.audit.recordInTx(tx, {
-        actor: user.userId,
-        action: AUDIT_ACTION.IMPORT,
-        targetType: 'ImportBatch',
-        targetId: batchId,
-        metadata: { accepted, rejected, total: received }, // bounded, counts-only (no PII)
-      });
-      return b;
+    episodes: ResolvedEpisode[],
+    partByRef: Map<string, Buffer>,
+  ): Promise<Map<string, StoredObject>> {
+    const objects = new Map<string, StoredObject>();
+    for (const ep of episodes) {
+      for (const ev of ep.evidence) {
+        const file = ev.dto.file;
+        if (typeof file !== 'string' || file.length === 0) continue; // payload-backed evidence
+        // Defensive: the ref + file ext were REF_RE/allow-list validated at the DTO boundary; assert before
+        // it becomes an object key, so the key is never built from an unvalidated ref (review P2-1).
+        if (!REF_RE.test(ev.ref)) throw new Error(`evidence ref failed REF_RE: ${ev.ref}`);
+        const buffer = partByRef.get(ev.ref);
+        if (!buffer) continue; // resolve already rejected missing uploads; guard defensively
+        const ext = file.split('.').pop()?.toLowerCase() ?? '';
+        const contentType = CONTENT_TYPE[ext] ?? 'application/octet-stream';
+        objects.set(
+          ev.ref,
+          await this.minio.putObject(`imports/${batchId}/${ev.ref}.${ext}`, buffer, contentType),
+        );
+      }
+    }
+    return objects;
+  }
+
+  /**
+   * Build one StagingRecord row per incoming record, with its validation outcome inline. The stored `raw` is
+   * REDACTED: accepted episodes keep their fields with patientRef→token; accepted non-episodes keep their
+   * (whitelisted) DTO; REJECTED records store NO body ({}) — only `rawHash` (a canonical digest of the original
+   * submitted record) survives as tamper-evidence. This upholds "the raw identifier is never persisted" even
+   * for malformed/hostile input, because staging now runs AFTER validation.
+   */
+  private buildStagingRows(
+    batchId: string,
+    records: RawRecord[],
+    results: RowResult[],
+    acceptedRefs: Set<string>,
+    rejections: Rejection[],
+    tokenByEpisodeRef: Map<string, string>,
+  ): Prisma.StagingRecordCreateManyInput[] {
+    const dtoByPosition = new Map<number, RowResult>();
+    for (const r of results) if (r.kind !== 'rejected') dtoByPosition.set(r.position, r);
+    const rejectionByPosition = new Map<number, Rejection>();
+    for (const r of rejections) rejectionByPosition.set(r.position, r);
+
+    return records.map((rec) => {
+      const accepted = acceptedRefs.has(rec.ref);
+      let raw: Prisma.InputJsonValue = {};
+      if (accepted) {
+        const res = dtoByPosition.get(rec.position);
+        if (res && res.kind === 'episode') {
+          raw = toJsonValue({ ...res.dto, patientRef: tokenByEpisodeRef.get(rec.ref) ?? '' });
+        } else if (res && res.kind !== 'rejected') {
+          raw = toJsonValue({ ...res.dto });
+        }
+      }
+      const rejection = rejectionByPosition.get(rec.position);
+      return {
+        importBatchId: batchId,
+        recordType: rec.recordType,
+        position: rec.position,
+        ref: rec.ref,
+        raw,
+        rawHash: canonicalDigest(rec.raw),
+        accepted,
+        rejectionReason: rejection ? toJsonValue(rejection.errors) : Prisma.DbNull,
+      };
     });
-    return this.toResult(batch, received, rejections);
+  }
+
+  private async writeEpisode(
+    tx: Prisma.TransactionClient,
+    batchId: string,
+    ep: ResolvedEpisode,
+    token: string,
+    objects: Map<string, StoredObject>,
+  ): Promise<void> {
+    await tx.episode.create({
+      data: {
+        id: ep.id,
+        patientToken: token,
+        facilityId: ep.dto.facilityId,
+        startedAt: new Date(ep.dto.startedAt),
+        endedAt: ep.dto.endedAt ? new Date(ep.dto.endedAt) : null,
+        importBatchId: batchId,
+      },
+    });
+
+    // D8: plain insert at version=1, isCurrent defaults true — no advisory lock / supersede path.
+    if (ep.claims.length > 0) {
+      await tx.claimVersion.createMany({
+        data: ep.claims.map((c) => ({
+          id: c.id,
+          episodeId: ep.id,
+          version: c.dto.version,
+          claimNo: c.dto.claimNo,
+          inacbgCode: c.dto.inacbgCode,
+          amount: new Prisma.Decimal(c.dto.amount),
+          contentHash: claimVersionContentHash({
+            inacbgCode: c.dto.inacbgCode,
+            amount: c.dto.amount,
+            patientToken: token,
+            lines: c.dto.lines,
+          }),
+          status: c.dto.status,
+          submittedAt: new Date(c.dto.submittedAt),
+          importBatchId: batchId,
+        })),
+      });
+      const lines = ep.claims.flatMap((c) =>
+        c.dto.lines.map((l) => ({
+          claimVersionId: c.id,
+          type: l.type,
+          code: l.code,
+          sequence: l.sequence,
+          description: l.description ?? null,
+          amount: l.amount == null ? null : new Prisma.Decimal(l.amount),
+        })),
+      );
+      if (lines.length > 0) await tx.claimLine.createMany({ data: lines });
+    }
+
+    if (ep.evidence.length > 0) {
+      await tx.evidenceRecord.createMany({
+        data: ep.evidence.map((e) => {
+          const object = objects.get(e.ref) ?? null;
+          // XOR invariant (enforced in validation): file-backed ⇒ object present; else payload present.
+          if (!object && e.dto.payload == null) {
+            throw new Error(
+              `evidence ${e.ref}: neither object nor payload (XOR invariant violated)`,
+            );
+          }
+          return {
+            id: e.id,
+            episodeId: ep.id,
+            kind: e.dto.kind,
+            objectKey: object?.objectKey ?? null,
+            payload: object ? Prisma.DbNull : toJsonValue(e.dto.payload),
+            contentHash: object
+              ? object.sha256
+              : evidencePayloadContentHash({
+                  kind: e.dto.kind,
+                  source: e.dto.source ?? null,
+                  capturedAt: e.dto.capturedAt,
+                  payload: e.dto.payload ?? null,
+                }),
+            ingestedBy: e.dto.ingestedBy ?? null,
+            source: e.dto.source ?? null,
+            capturedAt: new Date(e.dto.capturedAt),
+            importBatchId: batchId,
+          };
+        }),
+      });
+    }
+
+    if (ep.links.length > 0) {
+      await tx.evidenceLink.createMany({
+        data: ep.links.map((l) => ({
+          evidenceId: l.evidenceId,
+          claimVersionId: l.claimVersionId,
+          relation: l.dto.relation,
+          note: l.dto.note ?? null,
+        })),
+      });
+    }
+
+    // Same transaction as the canonical rows: no episode lands without its detection job.
+    await tx.outboxJob.create({
+      data: {
+        type: OUTBOX_JOB_TYPE.DETECT_EPISODE,
+        status: 'PENDING',
+        payload: { v: 1, episodeId: ep.id, importBatchId: batchId },
+      },
+    });
   }
 
   /** Best-effort: record FAILED + a sanitized code. Must tolerate its own write failing (don't rethrow). */
@@ -358,7 +380,7 @@ export class ImportService {
     if (prior.status === 'PROCESSING') {
       const stale = Date.now() - prior.updatedAt.getTime() > STALE_PROCESSING_MS;
       // 409 while genuinely in flight; a crashed (stale) batch falls through to be observed as-is (a full
-      // reclaim/retry is Prompt 14).
+      // reclaim/retry is Prompt 14). With the whole-batch transaction, a crashed PROCESSING batch committed nothing.
       if (!stale) throw new ConflictException({ code: 'IMPORT_IN_PROGRESS' });
     }
     const rejections = await this.rejectionsFor(prior.id);
@@ -374,7 +396,7 @@ export class ImportService {
     return this.toResult(batch, batch.totalRecords, rejections);
   }
 
-  private async rejectionsFor(batchId: string): Promise<ImportResult['rejected']> {
+  private async rejectionsFor(batchId: string): Promise<Rejection[]> {
     const rows = await this.prisma.stagingRecord.findMany({
       where: { importBatchId: batchId, accepted: false, rejectionReason: { not: Prisma.DbNull } },
       select: { position: true, recordType: true, ref: true, rejectionReason: true },
@@ -382,17 +404,13 @@ export class ImportService {
     });
     return rows.map((r) => ({
       position: r.position,
-      recordType: r.recordType as ImportResult['rejected'][number]['recordType'],
+      recordType: r.recordType as Rejection['recordType'],
       ref: r.ref,
-      errors: (r.rejectionReason as unknown as ImportResult['rejected'][number]['errors']) ?? [],
+      errors: fromJsonValue<Rejection['errors']>(r.rejectionReason) ?? [],
     }));
   }
 
-  private toResult(
-    batch: ImportBatch,
-    received: number,
-    rejections: ImportResult['rejected'],
-  ): ImportResult {
+  private toResult(batch: ImportBatch, received: number, rejections: Rejection[]): ImportResult {
     const status =
       batch.status === 'DONE' && batch.rejectedRecords > 0
         ? 'PARTIAL'
@@ -400,16 +418,8 @@ export class ImportService {
     return {
       batchId: batch.id,
       status,
-      summary: {
-        received,
-        accepted: batch.acceptedRecords,
-        rejected: batch.rejectedRecords,
-      },
+      summary: { received, accepted: batch.acceptedRecords, rejected: batch.rejectedRecords },
       rejected: rejections,
     };
   }
-}
-
-function isP2002(err: unknown): boolean {
-  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
 }
