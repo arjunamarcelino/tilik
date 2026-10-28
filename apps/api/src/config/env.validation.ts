@@ -49,6 +49,27 @@ export class EnvironmentVariables {
   @IsString()
   CORS_ORIGIN!: string;
 
+  // Keyed HMAC secret for patient-id pseudonymization (Prompt 06). Consumed as the literal env-string's
+  // UTF-8 bytes (never base64-decoded) so the Python detector reproduces identical tokens. ≥ 44 chars
+  // ≈ 32 random bytes of base64 (openssl rand -base64 32). Rotating it re-pseudonymizes everyone.
+  @IsString()
+  @MinLength(44)
+  PATIENT_TOKEN_HMAC_KEY!: string;
+
+  // MinIO / S3 object store for file evidence (Prompt 06). MINIO_ENDPOINT is a URL (http://host:port)
+  // parsed into endPoint/port/useSSL by MinioService.
+  @IsString()
+  MINIO_ENDPOINT!: string;
+
+  @IsString()
+  MINIO_ACCESS_KEY!: string;
+
+  @IsString()
+  MINIO_SECRET_KEY!: string;
+
+  @IsString()
+  MINIO_BUCKET!: string;
+
   @IsOptional()
   @IsEmail()
   SEED_ADMIN_EMAIL?: string;
