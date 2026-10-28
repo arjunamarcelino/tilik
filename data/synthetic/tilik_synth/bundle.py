@@ -29,6 +29,12 @@ _AMOUNT = re.compile(r"^\d{1,12}\.\d{2}$")
 _PATIENT_REF = re.compile(r"^SYN-PATIENT-\d{4,}$")
 _FACILITY_ID = re.compile(r"^SYN-FAC-\d+$")
 _RELATIONS = frozenset({config.REL_SUPPORT, config.REL_CONTRADICT, config.REL_SOURCE})
+_PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+
+
+def _file_ext(data: bytes) -> str:
+    """Infer the on-disk extension from the bytes' magic number (single source of truth)."""
+    return "png" if data[:8] == _PNG_MAGIC else "pdf"
 
 
 class GuardError(Exception):
@@ -209,7 +215,10 @@ class Bundle:
             _require(has_payload != has_file, f"evidence {e.ref} must have exactly one of payload/file")
             if has_file:
                 _require(e.ref in self._files, f"evidence {e.ref} file bytes missing")
-                _require(e.file == f"files/{e.ref}.png" or e.file.startswith("files/"), f"bad file path {e.file}")
+                # The recorded path must match the extension derived from the actual bytes — otherwise the
+                # importer (which uses `file` as the object key) would reference a filename write() never wrote.
+                expected = f"files/{e.ref}.{_file_ext(self._files[e.ref])}"
+                _require(e.file == expected, f"evidence {e.ref} file path {e.file!r} != written {expected!r}")
             _require(e.source.startswith("SYN"), f"evidence {e.ref} non-synthetic source {e.source!r}")
 
         for ln in self.links:
@@ -237,8 +246,7 @@ class Bundle:
             _write_json(out_dir / name, payload)
         _write_json(out_dir / "manifest.json", manifest)
         for ref, data in sorted(self._files.items()):
-            ext = "png" if data[:8] == b"\x89PNG\r\n\x1a\n" else "pdf"
-            (out_dir / "files" / f"{ref}.{ext}").write_bytes(data)
+            (out_dir / "files" / f"{ref}.{_file_ext(data)}").write_bytes(data)
 
         return manifest["counts"]
 
