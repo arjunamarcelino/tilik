@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@tilik/db';
+import { Prisma, type AuditEvent } from '@tilik/db';
 import { PrismaService } from '../prisma/prisma.service';
 
 export interface AuditInput {
@@ -26,11 +26,11 @@ export interface AuditInput {
 export class AuditService {
   constructor(private readonly prisma: PrismaService) {}
 
-  record(event: AuditInput) {
+  record(event: AuditInput): Promise<AuditEvent> {
     return this.prisma.auditEvent.create({ data: event });
   }
 
-  recordInTx(tx: Prisma.TransactionClient, event: AuditInput) {
+  recordInTx(tx: Prisma.TransactionClient, event: AuditInput): Promise<AuditEvent> {
     return tx.auditEvent.create({ data: event });
   }
 }

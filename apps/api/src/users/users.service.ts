@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomBytes } from 'node:crypto';
-import { Prisma } from '@tilik/db';
+import { Prisma, type User } from '@tilik/db';
 import { PasswordService } from './password.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { EnvironmentVariables, NodeEnv } from '../config/env.validation';
@@ -23,11 +23,11 @@ export class UsersService implements OnApplicationBootstrap {
   ) {}
 
   /** Emails are stored lowercased to match the DB's UNIQUE (lower(email)) index. */
-  findByEmail(email: string) {
+  findByEmail(email: string): Promise<User | null> {
     return this.prisma.user.findUnique({ where: { email: email.toLowerCase() } });
   }
 
-  findActiveById(id: string) {
+  findActiveById(id: string): Promise<Pick<User, 'id' | 'role' | 'isActive'> | null> {
     return this.prisma.user.findUnique({
       where: { id },
       select: { id: true, role: true, isActive: true },
