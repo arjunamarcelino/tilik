@@ -4,6 +4,7 @@ import type { Request } from 'express';
 import { Observable } from 'rxjs';
 import { concatMap } from 'rxjs/operators';
 import type { AuthenticatedUser } from '../common/types/auth';
+import { wasAuditedInTx } from './audit-context';
 import { AuditService } from './audit.service';
 import { AUDIT_KEY, AuditMeta } from './decorators/audit.decorator';
 
@@ -60,6 +61,9 @@ export class AuditInterceptor implements NestInterceptor {
 
     return next.handle().pipe(
       concatMap(async (body: unknown) => {
+        // The handler already recorded this action atomically in-tx (recordInTx) — don't double-write.
+        if (wasAuditedInTx(req)) return body;
+
         const actor = req.user?.userId;
         if (!actor) {
           this.logger.warn(

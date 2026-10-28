@@ -16,7 +16,8 @@ export interface AuditInput {
  *   - record()      — a standalone insert, for non-state-persisting actions (login/denials/etc).
  *   - recordInTx()  — MANDATORY for domain mutations: pass the SAME tx client as the state change so the
  *                     audit row commits atomically with it (no gaps). If it throws, the tx rolls back —
- *                     do not swallow it here.
+ *                     do not swallow it here. Such a handler must NOT also carry @Audit; calling
+ *                     markAuditedInTx(req) (audit-context.ts) makes that safe — the interceptor then skips.
  *
  * TODO(Prompt 06): re-introduce an application-level metadata size/field bound BEFORE insert once a route
  * writes caller-supplied metadata — the DB CHECK (octet_length < 1 MiB) is only a last-resort backstop and
