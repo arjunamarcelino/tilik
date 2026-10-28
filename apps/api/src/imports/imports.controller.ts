@@ -16,7 +16,7 @@ import { Role } from '@tilik/shared';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import type { AuthenticatedUser } from '../common/types/auth';
-import { ImportService } from './import.service';
+import { ImportsService } from './imports.service';
 import type { ImportResult } from './types';
 
 // Evidence files are tiny (synthetic bundle: < 1 KiB) and the manifest part is ~a few hundred KiB; a 5 MiB
@@ -31,13 +31,13 @@ const MAX_PARTS = 600;
  */
 @Controller('imports')
 export class ImportsController {
-  constructor(private readonly imports: ImportService) {}
+  constructor(private readonly imports: ImportsService) {}
 
   @Post()
   // ADMIN ⊇ REVIEWER in RolesGuard, so REVIEWER tags the lowest sufficient role (ADMIN passes too).
   @Roles(Role.REVIEWER)
   // AnyFilesInterceptor relies on Nest's DEFAULT in-memory multer storage so part.buffer is populated
-  // (ImportService reads buffers). Do NOT register MulterModule with disk storage or buffer goes undefined.
+  // (ImportsService reads buffers). Do NOT register MulterModule with disk storage or buffer goes undefined.
   @UseInterceptors(AnyFilesInterceptor({ limits: { fileSize: MAX_PART_BYTES, files: MAX_PARTS } }))
   async create(
     @CurrentUser() user: AuthenticatedUser,

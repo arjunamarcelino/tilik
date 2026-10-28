@@ -32,8 +32,8 @@ const CONTENT_TYPE: Record<string, string> = { png: 'image/png', pdf: 'applicati
 type MultipartFile = { fieldname: string; buffer: Buffer };
 
 @Injectable()
-export class ImportService {
-  private readonly logger = new Logger(ImportService.name);
+export class ImportsService {
+  private readonly logger = new Logger(ImportsService.name);
   private readonly hmacKey: string;
 
   constructor(

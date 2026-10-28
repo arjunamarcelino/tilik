@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { MinioModule } from '../minio/minio.module';
-import { ImportService } from './import.service';
+import { ImportsService } from './imports.service';
 import { ImportsController } from './imports.controller';
 
 // PrismaService (@Global PrismaModule) and AuditService (@Global AuditModule) are ambient; MinioModule is
@@ -8,6 +8,6 @@ import { ImportsController } from './imports.controller';
 @Module({
   imports: [MinioModule],
   controllers: [ImportsController],
-  providers: [ImportService],
+  providers: [ImportsService],
 })
 export class ImportsModule {}
