@@ -93,7 +93,6 @@ INACBG_SEVERITY = ("I", "II", "III", "0")
 # Evidence provenance strings (all obviously synthetic).
 SOURCE_EMR = "SYN-EMR"
 SOURCE_LAB = "SYN-LIS"
-SOURCE_PACS = "SYN-PACS"
 INGESTED_BY = "SYN-UPLOADER-01"
 
 # --- Category mix --------------------------------------------------------------------------------
