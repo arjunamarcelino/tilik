@@ -17,7 +17,10 @@ import { JwtStrategy } from './strategies/jwt.strategy';
       useFactory: (config: ConfigService<EnvironmentVariables, true>) => ({
         secret: config.get('JWT_SECRET', { infer: true }),
         // Pin the signing algorithm too (verification already pins it) — defense-in-depth consistency.
-        signOptions: { algorithm: 'HS256', expiresIn: config.get('JWT_EXPIRES_IN', { infer: true }) },
+        signOptions: {
+          algorithm: 'HS256',
+          expiresIn: config.get('JWT_EXPIRES_IN', { infer: true }),
+        },
       }),
     }),
   ],

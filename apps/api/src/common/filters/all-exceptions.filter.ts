@@ -46,7 +46,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
         message = body;
       } else if (typeof body === 'object' && body !== null && 'message' in body) {
         const raw = (body as { message: unknown }).message;
-        message = typeof raw === 'string' || Array.isArray(raw) ? (raw as string | string[]) : exception.message;
+        message =
+          typeof raw === 'string' || Array.isArray(raw)
+            ? (raw as string | string[])
+            : exception.message;
       } else {
         message = exception.message;
       }
