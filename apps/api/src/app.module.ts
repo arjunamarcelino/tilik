@@ -11,9 +11,9 @@ import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
-import { NodeEnv, validate } from './config/env.validation';
-import { DevModule } from './dev/dev.module';
+import { validate } from './config/env.validation';
 import { HealthModule } from './health/health.module';
+import { ImportsModule } from './imports/imports.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { UsersModule } from './users/users.module';
 
@@ -44,11 +44,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
     UsersModule,
     AuthModule,
     HealthModule,
-    // Verification stub in dev/test only (test so e2e can exercise the @Audit seam); fail-closed —
-    // an unset/unknown NODE_ENV matches neither and excludes it.
-    ...(process.env.NODE_ENV === NodeEnv.development || process.env.NODE_ENV === NodeEnv.test
-      ? [DevModule]
-      : []),
+    ImportsModule,
   ],
   providers: [
     // Order matters: JwtAuthGuard populates req.user before RolesGuard reads it; ThrottlerGuard last.

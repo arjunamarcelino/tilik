@@ -33,7 +33,9 @@ export class EpisodeDto {
 }
 
 export class ClaimLineDto {
-  @IsIn(Object.values(ClaimLineType)) type!: ClaimLineType;
+  // Typed as the enum's string-literal union (`${Enum}`) — validated against @tilik/shared at runtime, and
+  // assignable to Prisma's structural enum at the persistence edge without a cast (parity guard keeps them equal).
+  @IsIn(Object.values(ClaimLineType)) type!: `${ClaimLineType}`;
   @IsString() code!: string;
   @IsInt() @Min(1) sequence!: number;
   @IsOptional() @IsString() description?: string | null;
@@ -46,7 +48,7 @@ export class ClaimVersionDto {
   @IsString() claimNo!: string;
   @IsString() inacbgCode!: string;
   @Matches(AMOUNT_RE) amount!: string;
-  @IsIn(Object.values(ClaimStatus)) status!: ClaimStatus;
+  @IsIn(Object.values(ClaimStatus)) status!: `${ClaimStatus}`;
   @IsInt() @Min(1) version!: number;
   @IsISO8601({ strict: true }) submittedAt!: string;
   @IsArray()
@@ -59,7 +61,7 @@ export class ClaimVersionDto {
 export class EvidenceRecordDto {
   @Matches(REF_RE) ref!: string;
   @Matches(REF_RE) episodeRef!: string;
-  @IsIn(Object.values(EvidenceKind)) kind!: EvidenceKind;
+  @IsIn(Object.values(EvidenceKind)) kind!: `${EvidenceKind}`;
   @IsISO8601({ strict: true }) capturedAt!: string;
   @IsOptional() @IsString() ingestedBy?: string | null;
   @IsOptional() @IsString() source?: string | null;
@@ -72,6 +74,6 @@ export class EvidenceLinkDto {
   @Matches(REF_RE) ref!: string;
   @Matches(REF_RE) evidenceRef!: string;
   @IsOptional() @Matches(REF_RE) claimVersionRef?: string | null;
-  @IsIn(EVIDENCE_RELATIONS) relation!: string;
+  @IsIn(EVIDENCE_RELATIONS) relation!: (typeof EVIDENCE_RELATIONS)[number];
   @IsOptional() @IsString() note?: string | null;
 }
