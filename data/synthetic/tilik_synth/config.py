@@ -106,7 +106,8 @@ FRAUD_CONTRADICTION = "fraud_contradiction"
 EXCEPTION_REPEATABLE = "exception_repeatable_procedure"
 EXCEPTION_SOAP = "exception_soap_template"
 
-# Each planted family gets round(episodes * SEED_RATIO) episodes; clean takes the remainder.
-SEED_RATIO = 0.07
+# Each planted family gets max(2, episodes * SEED_PERCENT // 100) episodes; clean takes the remainder.
+# Integer-only (no float) and floored at 2 so the cloning/SOAP clusters always have a pair to compare.
+SEED_PERCENT = 7
 # Minimum episodes required to fit all five families (each at its floor) plus a clean majority.
 MIN_EPISODES = 25

@@ -32,7 +32,7 @@ def _generate(args: argparse.Namespace) -> dict:
     gen = Gen.create(args.seed)
     bundle = Bundle(seed=args.seed, seed_fraud=args.seed_fraud, requested_episodes=args.episodes)
 
-    k = round(args.episodes * config.SEED_RATIO) if args.seed_fraud else 0
+    k = max(2, args.episodes * config.SEED_PERCENT // 100) if args.seed_fraud else 0
     n_clean = args.episodes - 5 * k
 
     # Fixed build order → deterministic refs.

@@ -31,7 +31,7 @@ cat out/manifest.json
 | `--out PATH`   | `out`   | output directory (safely wiped first)                                  |
 | `--quiet`      | off     | suppress the summary line                                              |
 
-With `--seed-fraud`, each planted family gets `round(episodes × 0.07)` episodes; the rest are clean. The
+With `--seed-fraud`, each planted family gets `max(2, episodes × 7 // 100)` episodes; the rest are clean. The
 command requires `--episodes ≥ 25` so all five families fit alongside a clean majority.
 
 ## The bundle (`out/`)
