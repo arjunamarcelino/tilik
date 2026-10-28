@@ -1,8 +1,9 @@
 import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomBytes } from 'node:crypto';
-import { Prisma, type User } from '@tilik/db';
+import { type User } from '@tilik/db';
 import { PasswordService } from './password.service';
+import { isUniqueViolation } from '../common/prisma-errors';
 import { PrismaService } from '../prisma/prisma.service';
 import { EnvironmentVariables, NodeEnv } from '../config/env.validation';
 
@@ -82,7 +83,7 @@ export class UsersService implements OnApplicationBootstrap {
         this.logger.log(`Seeded ${spec.role} user ${email}`);
       } catch (err) {
         // Concurrent boots race on the unique index; P2002 means another instance already seeded it.
-        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') continue;
+        if (isUniqueViolation(err)) continue;
         throw err;
       }
     }

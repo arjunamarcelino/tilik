@@ -83,19 +83,23 @@ enum ClaimLineType {
 }
 
 model Episode {
-  id           String           @id @default(cuid())
-  patientToken String // HMAC pseudonym — NOT a real patient id (computed in the API layer)
-  facilityId   String
-  startedAt    DateTime
-  endedAt      DateTime?
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
-  claims       ClaimVersion[]
-  evidence     EvidenceRecord[]
-  findings     Finding[]
+  id            String           @id @default(cuid())
+  patientToken  String // HMAC pseudonym — NOT a real patient id (computed in the API layer)
+  facilityId    String
+  startedAt     DateTime
+  endedAt       DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  // Provenance: the import batch that minted this row (nullable — pre-import rows / other flows have none).
+  importBatch   ImportBatch?     @relation(fields: [importBatchId], references: [id], onDelete: Restrict)
+  importBatchId String?
+  claims        ClaimVersion[]
+  evidence      EvidenceRecord[]
+  findings      Finding[]
 
   @@index([patientToken])
   @@index([facilityId])
+  @@index([importBatchId])
 }
 
 model ClaimVersion {
@@ -114,11 +118,17 @@ model ClaimVersion {
   supersededById String?        @unique
   supersedes     ClaimVersion?  @relation("ClaimLineage")
   submittedAt    DateTime
+  // Provenance: the import batch that minted this row. The content-immutability trigger
+  // (tilik_claimversion_guard) is extended in this prompt's migration to also reject importBatchId changes.
+  importBatch    ImportBatch?   @relation(fields: [importBatchId], references: [id], onDelete: Restrict)
+  importBatchId  String?
   lines          ClaimLine[]
   links          EvidenceLink[]
   findings       Finding[]
   // The raw submitted claim blob is stored as EvidenceRecord(kind = CLAIM).payload.
   // Append-only trigger + CHECK (amount >= 0, version >= 1) added in the init migration.
+  // "current version of a claim" lookup + the one-current-per-claimNo invariant are enforced by a
+  // hand-authored partial UNIQUE index in the init migration: UNIQUE ("claimNo") WHERE "isCurrent".
 
   // The unique constraint is the backstop, not the coordination mechanism: concurrent resubmissions
   // of the same claimNo race on "max(version)+1" — ingest (Prompt 05) must advisory-lock
@@ -127,8 +137,7 @@ model ClaimVersion {
   @@index([episodeId])
   @@index([contentHash])
   @@index([fingerprint])
-  // "current version of a claim" lookup + the one-current-per-claimNo invariant are enforced by a
-  // hand-authored partial UNIQUE index in the init migration: UNIQUE ("claimNo") WHERE "isCurrent".
+  @@index([importBatchId])
 }
 
 model ClaimLine {
@@ -140,32 +149,37 @@ model ClaimLine {
   sequence       Int // FHIR diagnosisSequence / procedureSequence
   description    String?
   amount         Decimal?      @db.Decimal(14, 2)
+  // Append-only: the init migration blocks UPDATE/DELETE/TRUNCATE (claim content is immutable).
 
   @@index([claimVersionId])
   @@index([type, code])
-  // Append-only: the init migration blocks UPDATE/DELETE/TRUNCATE (claim content is immutable).
 }
 
 model EvidenceRecord {
-  id          String         @id @default(cuid())
-  episode     Episode        @relation(fields: [episodeId], references: [id], onDelete: Restrict)
-  episodeId   String
-  kind        EvidenceKind
-  objectKey   String? // MinIO object key
-  payload     Json?
-  contentHash String
-  hashAlgo    String         @default("sha256")
-  fingerprint String? // near-duplicate signature, distinct from contentHash
-  ingestedBy  String? // chain-of-custody: who captured it
-  source      String? // chain-of-custody: provenance system
-  verifiedAt  DateTime? // chain-of-custody: last hash re-verification
-  capturedAt  DateTime
-  links       EvidenceLink[]
+  id            String         @id @default(cuid())
+  episode       Episode        @relation(fields: [episodeId], references: [id], onDelete: Restrict)
+  episodeId     String
+  kind          EvidenceKind
+  objectKey     String? // MinIO object key
+  payload       Json?
+  contentHash   String
+  hashAlgo      String         @default("sha256")
+  fingerprint   String? // near-duplicate signature, distinct from contentHash
+  ingestedBy    String? // chain-of-custody: who captured it
+  source        String? // chain-of-custody: provenance system
+  verifiedAt    DateTime? // chain-of-custody: last hash re-verification
+  capturedAt    DateTime
+  // Provenance: the import batch that minted this row. The table is fully append-only (tilik_block_mutation
+  // rejects every UPDATE/DELETE), so importBatchId is immutable once written.
+  importBatch   ImportBatch?   @relation(fields: [importBatchId], references: [id], onDelete: Restrict)
+  importBatchId String?
+  links         EvidenceLink[]
   // Append-only trigger + CHECK (objectKey IS NOT NULL OR payload IS NOT NULL) added in the init migration.
 
   @@index([episodeId])
   @@index([contentHash])
   @@index([fingerprint])
+  @@index([importBatchId])
 }
 
 model EvidenceLink {
@@ -176,11 +190,11 @@ model EvidenceLink {
   claimVersionId String?
   relation       String // "mendukung" | "bertentangan" | "sumber" — CHECK constraint in the init migration
   note           String?
+  // onDelete on the ClaimVersion/EvidenceRecord FKs here (and on Finding/ClaimLine) is effectively
+  // unreachable: those parents are append-only, so their rows are never deleted. Kept for correctness.
 
   @@index([evidenceId])
   @@index([claimVersionId])
-  // onDelete on the ClaimVersion/EvidenceRecord FKs here (and on Finding/ClaimLine) is effectively
-  // unreachable: those parents are append-only, so their rows are never deleted. Kept for correctness.
 }
 
 model Finding {
@@ -268,10 +282,44 @@ model User {
 
 model ImportBatch {
   id              String    @id @default(cuid())
-  idempotencyKey  String?   @unique
+  // Per-actor idempotency: the SAME key under two actors is two independent batches (no cross-user replay/IDOR).
+  idempotencyKey  String?
+  uploadedBy      String // actor userId that claimed the batch
   status          JobStatus @default(PENDING)
   totalRecords    Int
   acceptedRecords Int
   rejectedRecords Int
+  error           String? // sanitized failure code (never a raw driver error / PII) — surfaced by GET when FAILED
   createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt // drives the stale-PROCESSING reclaim on replay
+  completedAt     DateTime?
+
+  staging  StagingRecord[]
+  episodes Episode[]
+  claims   ClaimVersion[]
+  evidence EvidenceRecord[]
+
+  @@unique([uploadedBy, idempotencyKey])
+}
+
+/// Raw "mentah" staging — every incoming record persisted before transformation, for the tamper-evidence trail.
+/// Intentionally MUTABLE (accepted/rejectionReason are set after validation) — no append-only trigger — but
+/// DELETE/TRUNCATE are REVOKEd from tilik_app (grant-app.sql): the submission record must not be app-erasable.
+/// PRIVACY: `raw` is stored REDACTED — the raw patientRef is replaced by its patientToken before persistence;
+/// `rawHash` = sha256(original bytes) preserves "exactly what was submitted" without retaining the identifier.
+model StagingRecord {
+  id              String      @id @default(cuid())
+  importBatch     ImportBatch @relation(fields: [importBatchId], references: [id], onDelete: Restrict)
+  importBatchId   String
+  recordType      String // "episode" | "claim-version" | "evidence-record" | "evidence-link"
+  position        Int // index within its source file
+  ref             String // surrogate ref (ep_/cv_/ev_/el_)
+  raw             Json // REDACTED incoming record (patientRef → patientToken)
+  rawHash         String // sha256 of the ORIGINAL record bytes (tamper-evidence proof)
+  accepted        Boolean     @default(false)
+  rejectionReason Json? // { field, constraint }[] — NEVER the offending values
+  createdAt       DateTime    @default(now())
+
+  @@index([importBatchId])
+  @@index([importBatchId, recordType])
 }

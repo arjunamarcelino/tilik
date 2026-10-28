@@ -44,8 +44,12 @@ export class AllExceptionsFilter implements ExceptionFilter {
       const body = exception.getResponse();
       if (typeof body === 'string') {
         message = body;
-      } else if (typeof body === 'object' && body !== null && 'message' in body) {
-        const raw = (body as { message: unknown }).message;
+      } else if (typeof body === 'object' && body !== null) {
+        // Honour a caller-supplied semantic `code` (e.g. throw new BadRequestException({ code: 'MANIFEST_MISSING' }));
+        // otherwise keep the HttpStatus name. Without this, object bodies with only a `code` key silently lose it.
+        const rawCode = (body as { code?: unknown }).code;
+        if (typeof rawCode === 'string') code = rawCode;
+        const raw = (body as { message?: unknown }).message;
         message =
           typeof raw === 'string' || Array.isArray(raw)
             ? (raw as string | string[])
