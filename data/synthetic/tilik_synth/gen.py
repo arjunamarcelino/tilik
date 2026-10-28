@@ -41,7 +41,9 @@ _ALLOWED_FAKER = frozenset(
     }
 )
 
-# Providers that must never be reachable (asserted at construction, defence in depth).
+# Providers that must never be reachable. The allow-list __getattr__ already denies everything not
+# explicitly allowed; this list is the defence-in-depth backstop asserted disjoint from the allow-list at
+# construction, so a future edit that accidentally allow-lists one of these fails fast.
 _FORBIDDEN_FAKER = (
     "ssn",
     "nik",
@@ -69,6 +71,8 @@ class SafeFaker:
     """Composition wrapper exposing only the allow-listed Faker methods."""
 
     def __init__(self, locale: str, seed: int):
+        # A forbidden provider must never be allow-listed (defence in depth; catches a future edit).
+        assert _ALLOWED_FAKER.isdisjoint(_FORBIDDEN_FAKER), "a forbidden Faker provider is on the allow-list"
         self._faker = Faker(locale)
         self._faker.seed_instance(seed)
         # Fail loudly if a NIK-capable extension (e.g. manekin) is ever registered.
