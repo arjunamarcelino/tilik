@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Prisma } from '@tilik/db';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -10,10 +10,6 @@ export interface AuditInput {
   metadata?: Prisma.InputJsonValue;
 }
 
-// Keep metadata well under the DB's CHECK (octet_length < 1 MiB). A CHECK violation inside a transaction
-// would roll the whole mutation back, so we bound it in application code first.
-const METADATA_MAX_BYTES = 64 * 1024;
-
 /**
  * Writes append-only AuditEvent rows. tilik_app holds INSERT/SELECT only (no UPDATE/DELETE), so no
  * update/delete helper exists by design. Two paths:
@@ -21,28 +17,20 @@ const METADATA_MAX_BYTES = 64 * 1024;
  *   - recordInTx()  — MANDATORY for domain mutations: pass the SAME tx client as the state change so the
  *                     audit row commits atomically with it (no gaps). If it throws, the tx rolls back —
  *                     do not swallow it here.
+ *
+ * TODO(Prompt 06): re-introduce an application-level metadata size/field bound BEFORE insert once a route
+ * writes caller-supplied metadata — the DB CHECK (octet_length < 1 MiB) is only a last-resort backstop and
+ * a violation inside a transaction would roll back the surrounding mutation.
  */
 @Injectable()
 export class AuditService {
-  private readonly logger = new Logger(AuditService.name);
-
   constructor(private readonly prisma: PrismaService) {}
 
   record(event: AuditInput) {
-    return this.prisma.auditEvent.create({ data: this.bound(event) });
+    return this.prisma.auditEvent.create({ data: event });
   }
 
   recordInTx(tx: Prisma.TransactionClient, event: AuditInput) {
-    return tx.auditEvent.create({ data: this.bound(event) });
-  }
-
-  private bound(event: AuditInput): AuditInput {
-    if (event.metadata === undefined) return event;
-    const bytes = Buffer.byteLength(JSON.stringify(event.metadata), 'utf8');
-    if (bytes <= METADATA_MAX_BYTES) return event;
-    this.logger.warn(
-      `AuditEvent metadata for '${event.action}' was ${bytes}B (> ${METADATA_MAX_BYTES}B) — dropped`,
-    );
-    return { ...event, metadata: { truncated: true } };
+    return tx.auditEvent.create({ data: event });
   }
 }
