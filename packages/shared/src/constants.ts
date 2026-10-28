@@ -15,7 +15,13 @@ export const OUTBOX_JOB_TYPE = {
 } as const;
 export type OutboxJobType = (typeof OUTBOX_JOB_TYPE)[keyof typeof OUTBOX_JOB_TYPE];
 
-/** AuditEvent.action values written by the import pipeline. */
+/**
+ * AuditEvent.action values written by the import pipeline.
+ *
+ * Convention: only actions that cross a service boundary (here: into the Python detector / the outbox) live
+ * as shared constants. API-only actions (AUTH_LOGIN_FAILED, USER_LOGIN, ACCESS_DENIED) stay inline string
+ * literals at their call sites — they need no shared contract.
+ */
 export const AUDIT_ACTION = {
   IMPORT_STARTED: 'IMPORT_STARTED', // durable at key-claim: who/when, before any domain state lands
   IMPORT: 'IMPORT', // terminal, at finalize: the single per-batch audit row
