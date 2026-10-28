@@ -9,6 +9,7 @@ from __future__ import annotations
 from . import config
 from .bundle import Bundle, ClaimLine, ClaimVersion, Episode, EvidenceLink, EvidenceRecord
 from .gen import Gen, pdf_bytes, png_bytes
+from .narratives import clone_narrative, soap_template_narrative
 
 FACILITIES = tuple(f"SYN-FAC-{i:02d}" for i in range(1, 9))
 
@@ -114,8 +115,6 @@ def _link(bundle: Bundle, gen: Gen, ev_ref: str, cv_ref: str | None, relation: s
 
 
 def _soap_payload(gen: Gen, name: str, mrn: str, variant: int | None = None) -> dict:
-    from .narratives import soap_template_narrative
-
     return {"format": "soap", "docType": "resume medis", "narrative": soap_template_narrative(gen, name, mrn, variant)}
 
 
@@ -169,8 +168,6 @@ def build_repeat_billing(bundle: Bundle, gen: Gen) -> None:
 
 def build_cloning(bundle: Bundle, gen: Gen, k: int, cluster_id: str) -> None:
     """k episodes, different patients, byte-identical clinical narrative (only name/MRN swapped) → flagged."""
-    from .narratives import clone_narrative
-
     for _ in range(k):
         label = {"category": config.FRAUD_CLONING, "detector": config.CLONING, "expectFinding": True, "clusterId": cluster_id}
         ep_ref, patient, day = _new_episode(bundle, gen, label=label)
