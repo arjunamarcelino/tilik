@@ -42,10 +42,14 @@ export class AllExceptionsFilter implements ExceptionFilter {
       status = exception.getStatus();
       code = HttpStatus[status] ?? 'ERROR';
       const body = exception.getResponse();
-      message =
-        typeof body === 'string'
-          ? body
-          : ((body as { message?: string | string[] }).message ?? exception.message);
+      if (typeof body === 'string') {
+        message = body;
+      } else if (typeof body === 'object' && body !== null && 'message' in body) {
+        const raw = (body as { message: unknown }).message;
+        message = typeof raw === 'string' || Array.isArray(raw) ? (raw as string | string[]) : exception.message;
+      } else {
+        message = exception.message;
+      }
     } else {
       // Unknown/unhandled: log the real detail server-side (keyed by correlationId), return nothing to the client.
       this.logger.error(
