@@ -2,7 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { AuditService } from '../audit/audit.service';
 import { toDomainRole } from '../common/roles/role.util';
-import { PasswordService } from '../crypto/password.service';
+import { PasswordService } from '../users/password.service';
 import { UsersService } from '../users/users.service';
 
 export interface LoginResult {

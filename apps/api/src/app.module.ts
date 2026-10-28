@@ -12,7 +12,6 @@ import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import { validate } from './config/env.validation';
-import { CryptoModule } from './crypto/crypto.module';
 import { DevModule } from './dev/dev.module';
 import { HealthModule } from './health/health.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -34,7 +33,6 @@ import { UsersModule } from './users/users.module';
     }),
     ThrottlerModule.forRoot({ throttlers: [{ ttl: seconds(60), limit: 100 }] }),
     PrismaModule,
-    CryptoModule,
     AuditModule,
     UsersModule,
     AuthModule,

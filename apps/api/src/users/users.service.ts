@@ -2,7 +2,7 @@ import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomBytes } from 'node:crypto';
 import { Prisma } from '@tilik/db';
-import { PasswordService } from '../crypto/password.service';
+import { PasswordService } from './password.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { EnvironmentVariables, NodeEnv } from '../config/env.validation';
 
