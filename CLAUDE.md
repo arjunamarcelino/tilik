@@ -12,7 +12,7 @@ on Docker Compose. Monorepo via **pnpm workspaces**.
 ## Layout
 
 ```
-apps/api                      NestJS API (TS)    (Prompt 05 — auth/RBAC/audit/health shell)
+apps/api                      NestJS API (TS)    (Prompt 05 — auth/RBAC/audit shell; Prompt 06 — import pipeline)
 apps/web                      Next.js web (TS)   (Prompt 10+)
 packages/shared               shared TS enums/types
 packages/db (@tilik/db)       Prisma schema, migrations, typed client
@@ -69,6 +69,17 @@ pnpm --filter @tilik/db db:grant                 # grant the non-owner app role 
   `Role` enums (`@tilik/shared` nominal vs Prisma structural union) don't overlap — bridge with `toDomainRole`. Run
   it: `pnpm --filter @tilik/api start:dev`. Details:
   `docs/solutions/integration-issues/nestjs-11-cjs-api-skeleton-nonowner-rbac-audit.md`.
+- **Import pipeline (`apps/api/src/imports`, Prompt 06) — the trust boundary.** `POST /v1/imports` (multipart;
+  ADMIN|REVIEWER) runs stage→validate→tokenize→canonical+outbox. **Never store a raw patient id:** tokenize
+  **before** staging (`StagingRecord.raw` holds the token, not `patientRef`; `rawHash` is the tamper-evidence proof).
+  `patientToken` + `contentHash` are computed **import-side** (specs in `@tilik/shared/tokenization` + `imports/canonical.ts`,
+  pinned by `test-vectors/tokenization.vectors.json` — the Python detector must match it; run `pnpm --filter @tilik/api
+test:vectors`). Each episode's canonical rows **and** its `DETECT_EPISODE` `OutboxJob` commit in **one** `$transaction`;
+  the batch is intentionally non-atomic (per-episode). Audit: a standalone `IMPORT_STARTED` at key-claim + exactly one
+  `recordInTx` `IMPORT` at finalize (no `@Audit` on the route). Idempotency is **per-actor** (`@@unique([uploadedBy,
+idempotencyKey])`). `OutboxJob.type`/`AuditEvent.action` are plain strings from **`@tilik/shared/constants`** (a subpath,
+  NOT the root barrel — an `as const` object there would trip `check-enum-parity.ts`). First `$transaction` + MinIO
+  consumer; seed the demo with `pnpm --filter @tilik/api import:seed` (needs the API running + `SEED_ADMIN_*` set).
 - **Enums have one source of truth.** Values live in `@tilik/shared`, mirrored in `schema.prisma`;
   `packages/db/scripts/check-enum-parity.ts` fails `typecheck` on drift. Use `@tilik/shared` enums at
   DTO/validation/API boundaries, Prisma enums only at the persistence edge.

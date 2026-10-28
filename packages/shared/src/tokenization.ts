@@ -18,4 +18,5 @@
 export const PATIENT_TOKEN_DOMAIN = 'patient:';
 
 /** Canonical normalization applied before HMAC. Must stay byte-for-byte identical in the Python detector. */
-export const normalizePatientRef = (raw: string): string => raw.normalize('NFC').trim().toUpperCase();
+export const normalizePatientRef = (raw: string): string =>
+  raw.normalize('NFC').trim().toUpperCase();

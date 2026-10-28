@@ -19,9 +19,9 @@ export enum NodeEnv {
 
 /**
  * The API's environment contract. Only the vars the API actually consumes are validated — the single
- * repo-root .env also carries MinIO/Anthropic/owner-DATABASE_URL that the API must NOT use, so unknown
- * vars are ignored (never rejected). NODE_ENV has no default: an unset value fails the boot closed, so
- * production hardening (seed-password requirement, no dev stub) can never silently fall into dev mode.
+ * repo-root .env also carries the owner DATABASE_URL and the Anthropic key that the API must NOT use, so
+ * unknown vars are ignored (never rejected). NODE_ENV has no default: an unset value fails the boot closed,
+ * so production hardening (seed-password requirement, no dev stub) can never silently fall into dev mode.
  */
 export class EnvironmentVariables {
   @IsEnum(NodeEnv)
