@@ -16,10 +16,11 @@ from . import config
 
 # --- Guard patterns ------------------------------------------------------------------------------
 
-# 12+ digits allowing a single separator between each — catches grouped NIK/NPWP/BPJS/phone
-# (e.g. "3173 0522 0890 0001", "09.254.294.3-407.000"). Unanchored so embedded runs also hit.
-# Used on JSON/narrative text, where free-form human identifiers would appear.
-_DIGIT_RUN = re.compile(r"\d(?:[ .\-]?\d){11,}")
+# 12+ digits allowing a single separator between each — catches grouped NIK/NPWP/BPJS/phone/KK
+# (e.g. "3173 0522 0890 0001", "09.254.294.3-407.000", "3173/0522/0890/0001", "1,234,567,890,123").
+# Unanchored so embedded runs also hit. Used on JSON/narrative text, where free-form human identifiers
+# would appear. (A shape backstop — the Faker allow-list facade is the primary control.)
+_DIGIT_RUN = re.compile(r"\d(?:[ .,\-/]?\d){11,}")
 # Contiguous 12+ digits only — used on binary file bytes, whose structure legitimately contains
 # space-separated digit groups (e.g. a PDF xref table's zero-padded offsets). Our generated files only
 # embed the (validated) evidence ref + a fixed title, so a grouped identifier can't originate there.

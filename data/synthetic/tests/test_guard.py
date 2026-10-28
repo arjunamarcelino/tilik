@@ -16,6 +16,8 @@ MUST_FLAG = [
     "0001234567890",  # 13-digit BPJS
     "0812345678901",  # phone-ish long run
     "pasien 3173052208900001 dirawat",  # embedded in free text
+    "3173/0522/0890/0001",  # slash-grouped KK
+    "1,234,567,890,123",  # comma-grouped
 ]
 
 MUST_NOT_FLAG = [
