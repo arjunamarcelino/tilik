@@ -50,6 +50,12 @@ def test_amount_like_value_in_other_field_is_flagged():
         _scan({"note": "999999999999"}, "claim")
 
 
+def test_non_amount_value_under_amount_key_is_still_scanned():
+    # Only a validated Decimal(14,2) string is exempt; a PII-shaped value under 'amount' must not hide.
+    with pytest.raises(GuardError):
+        _scan({"amount": "3173052208900001"}, "claim")
+
+
 @pytest.mark.parametrize("method", ["ssn", "address", "postcode", "phone_number", "email", "license_plate", "company"])
 def test_forbidden_faker_providers_raise(method):
     f = SafeFaker("id_ID", 42)

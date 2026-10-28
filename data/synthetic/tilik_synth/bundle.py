@@ -265,7 +265,9 @@ def _scan(obj: object, where: str) -> None:
     if isinstance(obj, dict):
         for k, v in obj.items():
             _scan_text(str(k), f"{where}.{k} (key)")
-            if k == "amount" and isinstance(v, (str, type(None))):
+            # Skip the digit scan only for a *validated* amount (Decimal(14,2) can be up to 12 digits).
+            # Any other value under an 'amount' key still gets scanned, so a PII-shaped value can't hide there.
+            if k == "amount" and isinstance(v, str) and _AMOUNT.match(v):
                 continue
             _scan(v, f"{where}.{k}")
     elif isinstance(obj, (list, tuple)):
