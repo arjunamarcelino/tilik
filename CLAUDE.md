@@ -12,7 +12,8 @@ on Docker Compose. Monorepo via **pnpm workspaces**.
 ## Layout
 
 ```
-apps/web  apps/api            TS apps            (Prompt 05+/10+)
+apps/api                      NestJS API (TS)    (Prompt 05 — auth/RBAC/audit/health shell)
+apps/web                      Next.js web (TS)   (Prompt 10+)
 packages/shared               shared TS enums/types
 packages/db (@tilik/db)       Prisma schema, migrations, typed client
 services/detector             Python worker      (Prompt 07+)   — NOT a workspace package
@@ -59,6 +60,15 @@ pnpm --filter @tilik/db db:grant                 # grant the non-owner app role 
   `infra/postgres/grant-app.sql` (GRANT CRUD, then role-targeted REVOKE — a `REVOKE … FROM PUBLIC` is a
   no-op). Keep that REVOKE list in sync with new append-only tables. Init SQL is a `.sh` (an initdb
   `.sql` can't interpolate `$APP_DB_PASSWORD`).
+- **`apps/api` (NestJS 11, CommonJS).** Pinned to Nest **11 + CJS** to match `@tilik/db`'s `moduleFormat:cjs`
+  (v12 is ESM-first — don't upgrade blindly). The API connects as the **non-owner `tilik_app`** via
+  `APP_DATABASE_URL` (never `DATABASE_URL`), **never runs migrations**, and asserts `current_user='tilik_app'` at
+  boot — so `getPrisma()` (owner URL) is ESLint-banned under `apps/api/src`; it builds its own `PrismaService` on the
+  pg adapter. Audit writes use **either** `@Audit` (interceptor; authenticated, state-changing, sole-record actions)
+  **or** `AuditService.recordInTx()` (domain mutations, atomic) — never both (a request marker enforces it). The two
+  `Role` enums (`@tilik/shared` nominal vs Prisma structural union) don't overlap — bridge with `toDomainRole`. Run
+  it: `pnpm --filter @tilik/api start:dev`. Details:
+  `docs/solutions/integration-issues/nestjs-11-cjs-api-skeleton-nonowner-rbac-audit.md`.
 - **Enums have one source of truth.** Values live in `@tilik/shared`, mirrored in `schema.prisma`;
   `packages/db/scripts/check-enum-parity.ts` fails `typecheck` on drift. Use `@tilik/shared` enums at
   DTO/validation/API boundaries, Prisma enums only at the persistence edge.
