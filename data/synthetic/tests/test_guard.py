@@ -5,9 +5,9 @@ import json
 
 import pytest
 
-from tilik_synth.bundle import GuardError, _scan, _scan_text
+from tilik_synth.bundle import GuardError, _scan, _scan_bytes, _scan_text
 from tilik_synth.cli import main
-from tilik_synth.gen import SafeFaker
+from tilik_synth.gen import SafeFaker, pdf_bytes, png_bytes
 
 MUST_FLAG = [
     "3173052208900001",  # contiguous 16-digit NIK
@@ -56,6 +56,22 @@ def test_non_amount_value_under_amount_key_is_still_scanned():
     # Only a validated Decimal(14,2) string is exempt; a PII-shaped value under 'amount' must not hide.
     with pytest.raises(GuardError):
         _scan({"amount": "3173052208900001"}, "claim")
+
+
+def test_scan_bytes_flags_contiguous_run():
+    with pytest.raises(GuardError):
+        _scan_bytes(b"prefix3173052208900001suffix", "file")
+
+
+def test_scan_bytes_lenient_on_grouped_runs():
+    # Binary structure (e.g. a PDF xref table) legitimately has space-separated digit groups; the
+    # file-byte path is intentionally contiguous-only, so grouped forms must NOT trip it.
+    _scan_bytes(b"0000000000 65535 0000000346 00000", "file")  # must not raise
+
+
+def test_generated_dummy_files_pass_the_byte_scan():
+    _scan_bytes(png_bytes("ev_0001"), "ev_0001.png")  # must not raise
+    _scan_bytes(pdf_bytes("ev_0002", "Laporan Operasi"), "ev_0002.pdf")  # must not raise
 
 
 @pytest.mark.parametrize("method", ["ssn", "address", "postcode", "phone_number", "email", "license_plate", "company"])
