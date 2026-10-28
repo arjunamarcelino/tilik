@@ -50,6 +50,24 @@ out/
   files/<ref>.{png,pdf}  # dummy file-backed evidence (deterministic bytes)
 ```
 
+### Import contract (bundle field → DB column)
+
+The bundle field names are not all identical to the Prisma columns; the import endpoint (Prompt 06) applies
+this mapping. Surrogate `*Ref` keys are resolved to the real `cuid` ids; derived/tamper-evidence fields are
+computed on import and are intentionally absent from the bundle.
+
+| Bundle field                                                           | DB column                                                   | Transform on import                                                 |
+| ---------------------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------- |
+| `ref` (e.g. `ep_0001`)                                                 | `id`                                                        | mint a `cuid`; keep a ref→id map to resolve the `*Ref` fields       |
+| `episodes[].patientRef`                                                | `Episode.patientToken`                                      | **HMAC** the ref with the server key (never stored raw)             |
+| `*.episodeRef` / `*.claimVersionRef` / `links[].evidenceRef`           | the resolved FK id                                          | look up in the ref→id map (null `claimVersionRef` stays null)       |
+| `evidence[].file` (`files/<ref>.ext`)                                  | `EvidenceRecord.objectKey`                                  | upload the file to MinIO, store the object key (upload-then-insert) |
+| `evidence[].payload` / `kind` / `capturedAt` / `source` / `ingestedBy` | same-named columns                                          | direct                                                              |
+| `claims[]` + `lines[]`, `amount` (string)                              | `ClaimVersion` / `ClaimLine`, `Decimal(14,2)`               | parse the decimal string                                            |
+| — (not emitted)                                                        | `contentHash`, `fingerprint`, `isCurrent`, `supersededById` | derived by import/detector                                          |
+
+`manifest.labels` is ground truth for detector precision/recall, not import input.
+
 ## Categories
 
 | Category                         | Detector             | Flagged? | What it plants                                                                                  |
