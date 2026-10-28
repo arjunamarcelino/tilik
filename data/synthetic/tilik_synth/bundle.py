@@ -37,6 +37,11 @@ def _file_ext(data: bytes) -> str:
     return "png" if data[:8] == _PNG_MAGIC else "pdf"
 
 
+def _ref_key(ref: str) -> int:
+    """Numeric suffix of a bundle ref (e.g. 'ep_0042' -> 42) for stable sorting beyond 9999."""
+    return int(ref.rsplit("_", 1)[1])
+
+
 class GuardError(Exception):
     """Raised when the bundle would leak a real-looking identifier or violate an invariant."""
 
@@ -133,18 +138,20 @@ class Bundle:
     # --- serialization -------------------------------------------------------
 
     def _serialized(self) -> dict[str, object]:
-        """Build the JSON-ready structures (arrays sorted by ref, lines by (type, sequence))."""
+        """Build the JSON-ready structures (arrays sorted by numeric ref, lines by (type, sequence))."""
 
         def claim_dict(c: ClaimVersion) -> dict:
             d = asdict(c)
             d["lines"] = [asdict(ln) for ln in sorted(c.lines, key=lambda ln: (ln.type, ln.sequence))]
             return d
 
+        # Sort by the numeric suffix, not the string, so ordering stays correct past 9999
+        # (where "..._10000" would otherwise sort before "..._9999" and break byte-stable array order).
         return {
-            "episodes.json": [asdict(e) for e in sorted(self.episodes, key=lambda e: e.ref)],
-            "claim-versions.json": [claim_dict(c) for c in sorted(self.claims, key=lambda c: c.ref)],
-            "evidence-records.json": [asdict(e) for e in sorted(self.evidence, key=lambda e: e.ref)],
-            "evidence-links.json": [asdict(ln) for ln in sorted(self.links, key=lambda ln: ln.ref)],
+            "episodes.json": [asdict(e) for e in sorted(self.episodes, key=lambda e: _ref_key(e.ref))],
+            "claim-versions.json": [claim_dict(c) for c in sorted(self.claims, key=lambda c: _ref_key(c.ref))],
+            "evidence-records.json": [asdict(e) for e in sorted(self.evidence, key=lambda e: _ref_key(e.ref))],
+            "evidence-links.json": [asdict(ln) for ln in sorted(self.links, key=lambda ln: _ref_key(ln.ref))],
         }
 
     def _manifest(self) -> dict:
