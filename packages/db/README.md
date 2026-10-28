@@ -27,6 +27,7 @@ Enum **values** are defined once in `@tilik/shared` and mirrored in `schema.pris
 | `generate` / `prepare` | generate the client (schema-only, no DB; `prepare` runs on install) |
 | `migrate:dev`          | create/apply a migration locally (**dev only** — can reset the DB)  |
 | `migrate:deploy`       | apply committed migrations (CI / staging / prod)                    |
+| `db:grant`             | grant the non-owner `tilik_app` role CRUD (run after every migrate) |
 | `studio`               | Prisma Studio                                                       |
 | `build` / `typecheck`  | compile to `dist/` (CJS) / type-check (runs the enum-parity guard)  |
 
@@ -34,4 +35,4 @@ Enum **values** are defined once in `@tilik/shared` and mirrored in `schema.pris
 
 The init migration appends hand-authored SQL (Postgres features Prisma's schema can't express): append-only triggers (`ENABLE ALWAYS`) + `REVOKE` on the audit/evidence spine, a column-aware `ClaimVersion` guard (content-immutable, lineage-mutable), a partial FIFO index for the outbox, a partial UNIQUE index (one current version per claim), CHECK constraints, and jsonb size ceilings. These replay into the shadow DB, so they do not register as drift. **Never run `prisma db push`** — it bypasses the migration history and this SQL.
 
-> Append-only here means append-only, **not** cryptographic tamper-evidence: a DB superuser/owner can disable a trigger. Run the app as a non-owner role (see `.env.example`); a hash chain on `AuditEvent` is future work.
+> Append-only here means append-only, **not** cryptographic tamper-evidence: a DB superuser/owner can disable a trigger. Run the app as a non-owner role (provisioned by `infra/postgres/init/01-app-role.sh` + `infra/postgres/grant-app.sql`); a hash chain on `AuditEvent` is future work.

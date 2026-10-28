@@ -1,5 +1,11 @@
-import 'dotenv/config'; // Prisma 7 no longer auto-loads .env; load it explicitly for the CLI.
+import { config as loadEnv } from 'dotenv';
+import { resolve } from 'node:path';
 import { defineConfig, env } from 'prisma/config';
+
+// Prisma 7 no longer auto-loads .env. Load the single repo-root .env before defineConfig() below
+// evaluates env('DATABASE_URL'). __dirname = packages/db (this package is CommonJS — no
+// "type":"module"), so the repo root is two levels up.
+loadEnv({ path: resolve(__dirname, '../../.env') });
 
 export default defineConfig({
   schema: 'prisma/schema.prisma',

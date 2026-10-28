@@ -1,0 +1,16 @@
+# Tilik reverse proxy — used in PRODUCTION (Prompt 14). Local dev does NOT run Caddy.
+#
+# localhost   -> Caddy serves HTTPS via its internal (locally-trusted) CA
+# real domain -> Caddy auto-provisions a Let's Encrypt cert (needs public :80/:443 + DNS)
+# Env placeholders ({$VAR:default}) are substituted at Caddy startup.
+{$TILIK_DOMAIN:localhost} {
+	# API first — `handle /v1/*` keeps the /v1 prefix (use handle_path only to strip it).
+	handle /v1/* {
+		reverse_proxy api:{$API_PORT:3001}
+	}
+
+	# Everything else -> web.
+	handle {
+		reverse_proxy web:{$WEB_PORT:3000}
+	}
+}

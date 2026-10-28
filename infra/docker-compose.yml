@@ -1,0 +1,83 @@
+# Tilik local development infrastructure.
+#
+# Brings up PostgreSQL + MinIO for local dev. App services (web / api / detector / caddy) are NOT
+# here — run those from the terminal in dev; they are filled in for production in Prompt 14.
+#
+# Bring-up:  cp .env.example ../.env   (edit it)   then (from this dir):
+#   docker compose --env-file ../.env up -d postgres minio minio-init
+# --env-file ../.env is required: Compose interpolates ${VAR} from .env in its own directory, but the
+# single source of truth is the repo-root .env (see ../README.md).
+
+name: tilik
+
+# MinIO image, pinned by digest for reproducibility (the Chainguard free tier only tags `:latest`).
+# The `minio` server and the `minio-init` client MUST run the same build — the anchor keeps them in sync.
+# Re-pin by re-pulling `cgr.dev/chainguard/minio:latest` and copying the new `@sha256:` digest here.
+x-minio-image: &minio-image cgr.dev/chainguard/minio@sha256:e70b2b1e74d79457f808710483bd726ff364529ca30736eaa15a6ab547d3a5a7
+
+services:
+  postgres:
+    image: postgres:16.15-alpine3.24
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: tilik
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD} # consumed by postgres/init/01-app-role.sh
+    ports:
+      - '127.0.0.1:5432:5432' # loopback only — do not expose the DB to the LAN
+    volumes:
+      - tilik-pgdata:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro # runs once, on first init of an empty volume
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  minio:
+    # Chainguard mirror (Docker Hub's minio/minio was retired in 2026). Non-root uid 65532; bundles
+    # both `minio` and `mc`. Pinned by digest via the *minio-image anchor (see top of file).
+    image: *minio-image
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - '127.0.0.1:9000:9000' # S3 API — loopback only
+      - '127.0.0.1:9001:9001' # web console — loopback only
+    volumes:
+      - tilik-minio-data:/data
+    # No healthcheck: readiness is gated by the minio-init sidecar (`mc ready`). minio shows "Up".
+
+  # One-shot: waits for MinIO to be ready, then creates the default bucket. Exits 0 when done —
+  # that Exited(0) is the readiness + bucket-created signal (minio itself never reports "healthy").
+  # Reuses the minio image (it ships `sh` + `mc`); MC_CONFIG_DIR points at a writable dir for uid 65532.
+  minio-init:
+    image: *minio-image
+    depends_on:
+      minio:
+        condition: service_started
+    environment:
+      MINIO_BUCKET: ${MINIO_BUCKET}
+      MC_CONFIG_DIR: /tmp/.mc
+      # Define the alias via env (no eager probe, unlike `mc alias set`); `mc ready` then polls until
+      # MinIO is actually serving — this avoids the startup race where mc connects before minio binds.
+      MC_HOST_local: http://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@minio:9000
+    entrypoint:
+      - sh
+      - -c
+      - >
+        mc ready local &&
+        mc mb --ignore-existing local/"$${MINIO_BUCKET}" &&
+        echo "bucket ready: $${MINIO_BUCKET}"
+    # Retry on non-zero exit so a slow first MinIO boot self-heals; the command is idempotent
+    # (`mc ready` waits, `mc mb --ignore-existing` is a no-op if the bucket exists).
+    restart: on-failure
+
+  # web / api / detector / caddy run from the terminal in dev; they are added to this file for
+  # production in Prompt 14 (api + detector connect as tilik_app; Caddy fronts them, see ./Caddyfile).
+
+volumes:
+  tilik-pgdata:
+  tilik-minio-data:

@@ -10,6 +10,8 @@ dist/
 .env
 .env.*
 !.env.example
+# Convention (not enforced here): infra/postgres/init/*.sh reads credentials from the environment
+# (APP_DB_PASSWORD), so no literal secret should ever be committed under infra/postgres/**.
 
 # Python
 .venv/
