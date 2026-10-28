@@ -9,6 +9,7 @@ parity guard — keep this block in sync by hand when the shared enums change.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 # Fixed epoch for all timestamps (tz-aware UTC). Never use datetime.now()/date.today().
@@ -47,27 +48,28 @@ REL_SOURCE = "sumber"
 # --- Clinical vocabulary (public codes — not PII) ------------------------------------------------
 
 
+@dataclass(frozen=True)
 class Procedure:
-    """An ICD-9-CM procedure with its repeatability class, required supporting docs, and tariff band.
+    """An ICD-9-CM procedure with its required supporting docs and tariff band.
 
-    ``tariff`` is (min, max) in whole rupiah; amounts are drawn as integers (never floats) and capped
-    well under 12 digits so they can never trip the no-PII digit scan.
+    ``requires`` lists the evidence a legitimate claim for this procedure must carry (consumed by the
+    scenario builders). ``tariff`` is (min, max) in whole rupiah; amounts are drawn as integers (never
+    floats) and capped well under 12 digits so they can never trip the no-PII digit scan. Repeatability is
+    expressed by membership in REPEATABLE_PROCEDURES vs SURGICAL_PROCEDURES below.
     """
 
-    def __init__(self, code: str, label: str, repeatable: bool, requires: tuple[str, ...], tariff: tuple[int, int]):
-        self.code = code
-        self.label = label
-        self.repeatable = repeatable
-        self.requires = requires
-        self.tariff = tariff
+    code: str
+    label: str
+    requires: tuple[str, ...]
+    tariff: tuple[int, int]
 
 
-# Legitimately repeatable (same patient/day is NOT fraud).
-HEMODIALYSIS = Procedure("39.95", "Hemodialisis", True, (), (900_000, 1_100_000))
-CHEMOTHERAPY = Procedure("99.25", "Kemoterapi (injeksi/infus)", True, (), (150_000, 3_000_000))
+# Legitimately repeatable (same patient/day is NOT fraud); no mandatory supporting docs.
+HEMODIALYSIS = Procedure("39.95", "Hemodialisis", (), (900_000, 1_100_000))
+CHEMOTHERAPY = Procedure("99.25", "Kemoterapi (injeksi/infus)", (), (150_000, 3_000_000))
 # One-time (billed twice same patient/day is a strong fraud signal); require operative + anaesthesia docs.
-APPENDECTOMY = Procedure("47.09", "Apendektomi", False, ("laporan operasi", "laporan anestesi"), (5_000_000, 12_000_000))
-CHOLECYSTECTOMY = Procedure("51.23", "Kolesistektomi laparoskopi", False, ("laporan operasi", "laporan anestesi"), (10_000_000, 20_000_000))
+APPENDECTOMY = Procedure("47.09", "Apendektomi", ("laporan operasi", "laporan anestesi"), (5_000_000, 12_000_000))
+CHOLECYSTECTOMY = Procedure("51.23", "Kolesistektomi laparoskopi", ("laporan operasi", "laporan anestesi"), (10_000_000, 20_000_000))
 
 REPEATABLE_PROCEDURES = (HEMODIALYSIS, CHEMOTHERAPY)
 SURGICAL_PROCEDURES = (APPENDECTOMY, CHOLECYSTECTOMY)

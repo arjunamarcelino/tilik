@@ -134,12 +134,12 @@ def build_clean(bundle: Bundle, gen: Gen) -> None:
         proc = gen.pick(config.SURGICAL_PROCEDURES)
         amount = gen.money(*proc.tariff)
         cv = _claim(bundle, gen, ep_ref, lines=[_dx_line(gen), _proc_line(proc, amount)], amount=amount, day=day)
-        op = _file_evidence(bundle, gen, ep_ref, config.ATTACHMENT, day=day, source=config.SOURCE_EMR,
-                            title="Laporan Operasi", as_pdf=True)
-        anes = _file_evidence(bundle, gen, ep_ref, config.ATTACHMENT, day=day, source=config.SOURCE_EMR,
-                             title="Laporan Anestesi", as_pdf=True)
-        _link(bundle, gen, op, cv, config.REL_SUPPORT, "laporan operasi mendukung tindakan")
-        _link(bundle, gen, anes, cv, config.REL_SUPPORT, "laporan anestesi mendukung tindakan")
+        # Carry every supporting doc the procedure requires (drives off proc.requires so fixture and rule
+        # can't drift) — this is exactly what build_contradiction omits.
+        for doc in proc.requires:
+            ev = _file_evidence(bundle, gen, ep_ref, config.ATTACHMENT, day=day, source=config.SOURCE_EMR,
+                                title=doc.title(), as_pdf=True)
+            _link(bundle, gen, ev, cv, config.REL_SUPPORT, f"{doc} mendukung tindakan")
     else:  # medical outpatient case
         amount = gen.money(150_000, 400_000)
         cv = _claim(bundle, gen, ep_ref, lines=[_dx_line(gen)], amount=amount, day=day)
@@ -190,7 +190,7 @@ def build_contradiction(bundle: Bundle, gen: Gen) -> None:
         "category": config.FRAUD_CONTRADICTION,
         "detector": config.PERTENTANGAN_BUKTI,
         "expectFinding": True,
-        "note": f"klaim {proc.label} tanpa laporan operasi/anestesi",
+        "note": f"klaim {proc.label} tanpa {' / '.join(proc.requires)}",
     }
     ep_ref, patient, day = _new_episode(bundle, gen, label=label)
     name = gen.faker.name()
