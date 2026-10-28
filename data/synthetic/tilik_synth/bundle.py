@@ -145,9 +145,11 @@ class Bundle:
         for lab in self.labels.values():
             by_category[lab["category"]] = by_category.get(lab["category"], 0) + 1
         return {
+            # Top-level so a consumer (Prompt 06) can version-gate its parser without reaching into
+            # provenance metadata. Bump when the bundle's shape changes.
+            "bundleSchemaVersion": config.BUNDLE_SCHEMA_VERSION,
             "generator": {
                 "name": config.GENERATOR_NAME,
-                "bundleSchemaVersion": config.BUNDLE_SCHEMA_VERSION,
                 "generatorVersion": config.GENERATOR_VERSION,
                 "seed": self.seed,
                 "seedFraud": self.seed_fraud,
