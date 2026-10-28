@@ -11,7 +11,7 @@ import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
-import { validate } from './config/env.validation';
+import { NodeEnv, validate } from './config/env.validation';
 import { DevModule } from './dev/dev.module';
 import { HealthModule } from './health/health.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -37,8 +37,11 @@ import { UsersModule } from './users/users.module';
     UsersModule,
     AuthModule,
     HealthModule,
-    // Verification stub only outside production (fail-closed: an unset NODE_ENV excludes it).
-    ...(process.env.NODE_ENV === 'development' ? [DevModule] : []),
+    // Verification stub in dev/test only (test so e2e can exercise the @Audit seam); fail-closed —
+    // an unset/unknown NODE_ENV matches neither and excludes it.
+    ...(process.env.NODE_ENV === NodeEnv.development || process.env.NODE_ENV === NodeEnv.test
+      ? [DevModule]
+      : []),
   ],
   providers: [
     // Order matters: JwtAuthGuard populates req.user before RolesGuard reads it; ThrottlerGuard last.
