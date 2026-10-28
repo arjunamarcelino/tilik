@@ -273,8 +273,12 @@ def _scan(obj: object, where: str) -> None:
             _scan(v, f"{where}[{i}]")
     elif isinstance(obj, str):
         _scan_text(obj, where)
-    elif obj is None or isinstance(obj, (bool, int, float)):
-        return
+    elif isinstance(obj, bool) or obj is None:
+        return  # booleans / null carry no digits (bool before int: bool is an int subclass)
+    elif isinstance(obj, (int, float)):
+        # Integers serialize to raw digits on disk (e.g. an identifier-shaped --seed in manifest.generator),
+        # so scan their string form too — the early-return here was the int-bypass hole.
+        _scan_text(str(obj), where)
     else:  # fail-closed on anything the walker doesn't recognize
         raise GuardError(f"unscannable type {type(obj).__name__} at {where}")
 

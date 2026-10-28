@@ -62,6 +62,13 @@ def test_allowed_faker_providers_work():
     assert isinstance(f.name(), str) and f.name()
 
 
+def test_identifier_shaped_seed_is_rejected(tmp_path):
+    # An integer --seed serializes to raw digits in manifest.generator.seed; the guard must still catch it.
+    rc = main(["--episodes", "30", "--seed-fraud", "--seed", "3173052208900001", "--out", str(tmp_path / "out"), "--quiet"])
+    assert rc == 1
+    assert not (tmp_path / "out").exists()  # guard fails before any write
+
+
 def test_end_to_end_bundle_is_well_formed(tmp_path):
     rc = main(["--episodes", "30", "--seed-fraud", "--seed", "7", "--out", str(tmp_path / "out"), "--quiet"])
     assert rc == 0
