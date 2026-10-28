@@ -31,6 +31,8 @@ import { UsersModule } from './users/users.module';
         },
       },
     }),
+    // In-memory, per-instance store. NOTE(Prompt 14): use a Redis ThrottlerStorage for multi-instance so
+    // the per-credential login limit (auth.controller) isn't multiplied by the replica count.
     ThrottlerModule.forRoot({ throttlers: [{ ttl: seconds(60), limit: 100 }] }),
     PrismaModule,
     AuditModule,

@@ -1,5 +1,6 @@
 import { INestApplication, RequestMethod, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { Express } from 'express';
 import helmet from 'helmet';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import type { EnvironmentVariables } from './config/env.validation';
@@ -28,4 +29,9 @@ export function configureApp(app: INestApplication): void {
   app.use(helmet()); // security headers; Caddy owns HSTS in production (Prompt 14)
   app.enableCors({ origin: config.get('CORS_ORIGIN', { infer: true }), credentials: false });
   app.enableShutdownHooks(); // required so PrismaService.onModuleDestroy ($disconnect) fires on SIGTERM
+
+  // Trust the first proxy hop (Caddy, Prompt 14) so the throttler keys on the real client IP instead of
+  // the proxy address. NOTE(Prompt 14): the default throttler store is in-memory/per-instance — swap in a
+  // Redis-backed ThrottlerStorage before any multi-instance deploy or the login limit scales with replicas.
+  (app.getHttpAdapter().getInstance() as Express).set('trust proxy', 1);
 }
