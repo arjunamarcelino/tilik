@@ -5,7 +5,6 @@ import type { RawRecord } from './types';
  * arrive as separate file parts) and minus manifest.labels (detector ground truth, never imported).
  */
 export interface ImportManifest {
-  bundleSchemaVersion?: string;
   episodes: Array<Record<string, unknown>>;
   claimVersions: Array<Record<string, unknown>>;
   evidenceRecords: Array<Record<string, unknown>>;
@@ -26,14 +25,16 @@ export function isImportManifest(value: unknown): value is ImportManifest {
   return SECTIONS.every(([key]) => Array.isArray(obj[key]));
 }
 
-/** Flatten the manifest into position-tagged raw records in dependency order (episodes first). */
+/** Flatten the manifest into records tagged with a BATCH-GLOBAL position, in dependency order (episodes first). */
 export function flattenManifest(manifest: ImportManifest): RawRecord[] {
   const out: RawRecord[] = [];
+  let position = 0; // global across all sections, so rejection ordering is stable and unambiguous
   for (const [key, recordType] of SECTIONS) {
-    manifest[key].forEach((raw, index) => {
-      const ref = typeof raw.ref === 'string' ? raw.ref : `${recordType}:${index}`;
-      out.push({ recordType, position: index, ref, raw });
-    });
+    for (const raw of manifest[key]) {
+      const ref = typeof raw.ref === 'string' ? raw.ref : `${recordType}:${position}`;
+      out.push({ recordType, position, ref, raw });
+      position++;
+    }
   }
   return out;
 }

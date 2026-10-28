@@ -43,7 +43,6 @@ async function main(): Promise<void> {
 
   // Build the manifest (labels are NOT read — detector ground truth must never be imported).
   const manifest = {
-    bundleSchemaVersion: '1',
     episodes: readJson('episodes.json'),
     claimVersions: readJson('claim-versions.json'),
     evidenceRecords: readJson('evidence-records.json'),
