@@ -23,8 +23,8 @@ psql -v ON_ERROR_STOP=1 \
 	GRANT CONNECT ON DATABASE :"dbname" TO tilik_app;
 	GRANT USAGE ON SCHEMA public TO tilik_app;
 
-	-- DDL lock: tilik_app owns nothing and cannot create objects in public. (REVOKE FROM PUBLIC is
-	-- already the PG15+ default on a fresh cluster; kept for clusters upgraded from PG14 or earlier.)
-	REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+	-- DDL lock: tilik_app owns nothing, so it cannot create objects in public. This explicit REVOKE
+	-- documents that intent. (We don't REVOKE ... FROM PUBLIC — that's already the default on a fresh
+	-- PG15+ cluster, which the pinned postgres:16 image always is.)
 	REVOKE CREATE ON SCHEMA public FROM tilik_app;
 EOSQL
