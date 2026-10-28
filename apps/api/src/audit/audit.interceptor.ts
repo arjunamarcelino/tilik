@@ -1,12 +1,16 @@
 import { CallHandler, ExecutionContext, Injectable, Logger, NestInterceptor } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import type { Request } from 'express';
 import { Observable } from 'rxjs';
 import { concatMap } from 'rxjs/operators';
-import type { AuthenticatedRequest } from '../common/types/auth';
+import type { AuthenticatedUser } from '../common/types/auth';
 import { AuditService } from './audit.service';
 import { AUDIT_KEY, AuditMeta } from './decorators/audit.decorator';
 
 const STATE_CHANGING = ['POST', 'PUT', 'PATCH', 'DELETE'];
+
+// Typed honestly: the interceptor can run on a @Public route, so user may be absent at runtime.
+type MaybeAuthedRequest = Request & { user?: AuthenticatedUser };
 
 function asString(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
@@ -20,10 +24,14 @@ function extractId(body: unknown): string | undefined {
 }
 
 /**
- * Writes an AuditEvent after a successful, state-changing, @Audit-annotated request. concatMap awaits the
- * write before the response flushes (so "exactly one AuditEvent" is deterministic), but a failed write is
- * logged and swallowed — it must never turn a 2xx into a 500. Because it runs only on the success stream,
- * failed requests are not audited here. Domain mutations use AuditService.recordInTx() instead (see @Audit).
+ * Records an AuditEvent after a successful @Audit-annotated request. Scope (matches @Audit): an
+ * AUTHENTICATED, state-changing action whose audit row is its only durable record. Domain state mutations
+ * must use AuditService.recordInTx() inside their transaction instead (atomic, no gaps).
+ *
+ * The write is awaited (so "exactly one AuditEvent" is deterministic) but a failure is logged and swallowed
+ * — it never turns a 2xx into a 500. @Audit used outside its contract (a non-state-changing method, or an
+ * unauthenticated route with no actor) is logged as a misuse warning and skipped, rather than silently
+ * recording nothing or throwing a swallowed TypeError.
  */
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
@@ -39,18 +47,32 @@ export class AuditInterceptor implements NestInterceptor {
       ctx.getHandler(),
       ctx.getClass(),
     ]);
-    const req = ctx.switchToHttp().getRequest<AuthenticatedRequest>();
-    if (!meta || !STATE_CHANGING.includes(req.method)) {
+    if (!meta) return next.handle();
+
+    const req = ctx.switchToHttp().getRequest<MaybeAuthedRequest>();
+    if (!STATE_CHANGING.includes(req.method)) {
+      this.logger.warn(
+        `@Audit on a non-state-changing ${req.method} route ('${meta.action}') is ignored — the ` +
+          'interceptor only records POST/PUT/PATCH/DELETE. Record reads explicitly instead.',
+      );
       return next.handle();
     }
 
     return next.handle().pipe(
       concatMap(async (body: unknown) => {
+        const actor = req.user?.userId;
+        if (!actor) {
+          this.logger.warn(
+            `@Audit on an unauthenticated route ('${meta.action}') has no actor to record — skipped. ` +
+              'Record it explicitly with a known actor instead.',
+          );
+          return body;
+        }
         const targetId =
           extractId(body) ?? asString(req.params.id) ?? `route:${ctx.getHandler().name}`;
         try {
           await this.audit.record({
-            actor: req.user.userId,
+            actor,
             action: meta.action,
             targetType: meta.targetType,
             targetId,
