@@ -26,14 +26,18 @@ const MAX_PARTS = 600;
 
 /**
  * NO @Audit on these routes: the import audits itself via AuditService.record (IMPORT_STARTED) and
- * recordInTx (terminal IMPORT) + markAuditedInTx inside its own transaction.
+ * recordInTx (terminal IMPORT) inside its own transaction. (No markAuditedInTx is needed — that marker
+ * only matters for a route carrying BOTH @Audit and recordInTx, which this is not.)
  */
 @Controller('imports')
 export class ImportsController {
   constructor(private readonly imports: ImportService) {}
 
   @Post()
-  @Roles(Role.ADMIN, Role.REVIEWER)
+  // ADMIN ⊇ REVIEWER in RolesGuard, so REVIEWER tags the lowest sufficient role (ADMIN passes too).
+  @Roles(Role.REVIEWER)
+  // AnyFilesInterceptor relies on Nest's DEFAULT in-memory multer storage so part.buffer is populated
+  // (ImportService reads buffers). Do NOT register MulterModule with disk storage or buffer goes undefined.
   @UseInterceptors(AnyFilesInterceptor({ limits: { fileSize: MAX_PART_BYTES, files: MAX_PARTS } }))
   async create(
     @CurrentUser() user: AuthenticatedUser,
@@ -57,7 +61,7 @@ export class ImportsController {
   }
 
   @Get(':id')
-  @Roles(Role.ADMIN, Role.REVIEWER)
+  @Roles(Role.REVIEWER)
   get(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string): Promise<ImportResult> {
     return this.imports.getBatch(user, id);
   }
