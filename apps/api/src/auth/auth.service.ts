@@ -43,7 +43,8 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const accessToken = this.jwt.sign({ sub: user.id, role: toDomainRole(user.role) });
+    // Record the audit row BEFORE minting the token: this path fails closed (the write is awaited and
+    // not swallowed), so a failed audit must not leave a signed token issued without a trace.
     await this.audit.record({
       actor: user.id,
       action: 'USER_LOGIN',
@@ -51,6 +52,7 @@ export class AuthService {
       targetId: user.id,
       metadata: { outcome: 'SUCCESS' },
     });
+    const accessToken = this.jwt.sign({ sub: user.id, role: toDomainRole(user.role) });
     return { accessToken };
   }
 }
