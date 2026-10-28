@@ -65,6 +65,14 @@ pnpm --filter @tilik/db db:grant                 # grant the non-owner app role 
 - **MinIO.** Docker Hub's `minio/minio` was retired in 2026 — use the `cgr.dev/chainguard/minio` mirror
   (digest-pinned; distroless + non-root, so no in-container healthcheck — readiness is the `minio-init`
   sidecar exiting 0).
+- **Synthetic data generator (`data/synthetic`, Python, `Faker` only).** Output is byte-reproducible only
+  for the **pinned toolchain** (`Faker==` + CPython) + `PYTHONHASHSEED=0` + fixed `--seed`; `checksums.txt`
+  is the cross-machine golden file (a same-machine `diff` can't prove it). A no-PII guard (allow-list Faker
+  facade + pre-write digit scan) fails the run on any plausibly-real identifier — note **Python** Faker
+  `id_ID.ssn()` is US-format, _not_ a NIK (that myth is FakerPHP). The generated bundle
+  (`data/synthetic/out/`) is gitignored **and** in `.prettierignore` (prettier scans the working tree, not
+  `.gitignore`). Details: `data/synthetic/README.md` +
+  `docs/solutions/integration-issues/deterministic-nopii-synthetic-data-python.md`.
 - **`docs/` is gitignored.** Plans, reviews, and `docs/solutions/*` are local knowledge, not committed.
   Check `docs/solutions/` for prior fixes before researching a problem.
 
