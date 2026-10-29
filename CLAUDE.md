@@ -16,7 +16,7 @@ apps/api                      NestJS API (TS)    (Prompt 05 — auth/RBAC/audit 
 apps/web                      Next.js web (TS)   (Prompt 10+)
 packages/shared               shared TS enums/types
 packages/db (@tilik/db)       Prisma schema, migrations, typed client
-services/detector             Python worker      (Prompt 07+)   — NOT a workspace package
+services/detector             Python worker      (Prompt 07 — outbox poller + tokenizer; 08+ detectors) — NOT a workspace package
 data/synthetic                data generator     (Prompt 04)    — NOT a workspace package
 infra                         Docker Compose + Caddy + env       — NOT a workspace package
 docs                          plans / reviews / solutions        — gitignored (local knowledge)
@@ -84,6 +84,26 @@ test:vectors`). **The whole batch is ONE `$transaction`** — staging + every ep
   trip `check-enum-parity.ts`). Provenance/submission columns are DB-immutable via column-guard triggers
   (`tilik_claimversion_guard`/`tilik_episode_guard` on `importBatchId`; `tilik_stagingrecord_guard` on `raw`/`rawHash`).
   First `$transaction` + MinIO consumer; seed the demo with `pnpm --filter @tilik/api import:seed` (API running + `SEED_ADMIN_*` set).
+- **Detector worker (`services/detector`, Python, Prompt 07) — the outbox consumer.** Python (not a pnpm
+  workspace; mirrors `data/synthetic`'s layout — hatchling, exact-pinned deps, per-dir `.venv`, pytest). It
+  **consumes** the `DETECT_EPISODE` outbox the import pipeline fills: poll → claim → load episode →
+  `run_detectors()` (a **no-op stub** until Prompts 08–09) → write `Finding`s + mark `DONE`. DB access is raw
+  **psycopg3** as the **non-owner `tilik_app`** via `APP_DATABASE_URL` (ESLint has no reach here, so a pytest
+  **source guard** forbids a bare `DATABASE_URL` key + asserts placeholder-only SQL); it asserts
+  `current_user='tilik_app'` at boot/after every reconnect and **never runs migrations**. The claim is ONE
+  atomic `UPDATE … (SELECT … FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING` (**claim-then-release**); every
+  terminal/requeue UPDATE is **lease-fenced** (`WHERE id=… AND status='PROCESSING' AND lockedBy=worker`) and
+  aborts the tx on `rowcount=0`, so the Prompt 08 stale-lock reaper can't cause a double-insert (findings
+  have no natural key). `load_episode` reads under one **REPEATABLE READ** snapshot (deterministic detector
+  input); the `Episode` contract carries all claim versions (+lines), evidence, and **`EvidenceLink`s**
+  (`relation='bertentangan'` is the PERTENTANGAN_BUKTI signal). Gotchas: the Prisma `?schema=` DSN param must
+  be normalized (libpq rejects it); Prisma `DateTime` columns are **naive** → coerce UTC at the repo
+  boundary; enums are hand-mirrored `StrEnum`s (no parity guard). Parity is pinned by shared fixtures —
+  `test-vectors/tokenization.vectors.json` (tokenizer) and `test-vectors/outbox-contract.json` (job type);
+  assert both sides with `pnpm --filter @tilik/api test:vectors`, `… test:contract`, and the detector's
+  `pytest`. DB integration tests need an **isolated** DB (`DETECTOR_TEST_DATABASE_URL`) or they skip — never
+  run them against a dirty outbox. Reaper + real detectors + Docker/Compose are Prompts 08–09/14. Details:
+  `docs/solutions/integration-issues/python-detector-worker-outbox-psycopg3.md`.
 - **Enums have one source of truth.** Values live in `@tilik/shared`, mirrored in `schema.prisma`;
   `packages/db/scripts/check-enum-parity.ts` fails `typecheck` on drift. Use `@tilik/shared` enums at
   DTO/validation/API boundaries, Prisma enums only at the persistence edge.
