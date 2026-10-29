@@ -72,37 +72,55 @@ def claim_job(conn: psycopg.Connection, worker_id: str) -> dict[str, Any] | None
 
 
 def load_episode(conn: psycopg.Connection, episode_id: str) -> Episode | None:
-    """Load the episode + all its claim versions (+lines) + evidence. Returns None if the episode is gone."""
-    ep = conn.execute(
-        """
-        SELECT "id", "patientToken", "facilityId", "startedAt", "endedAt", "importBatchId"
-        FROM "Episode" WHERE "id" = %(id)s
-        """,
-        {"id": episode_id},
-    ).fetchone()
-    if ep is None:
-        return None
+    """Load the episode + all its claim versions (+lines) + evidence. Returns None if the episode is gone.
 
-    claim_rows = conn.execute(
-        """
-        SELECT "id", "version", "claimNo", "inacbgCode", "amount", "contentHash",
-               "fingerprint", "status", "isCurrent", "submittedAt"
-        FROM "ClaimVersion" WHERE "episodeId" = %(id)s ORDER BY "version", "id"
-        """,
-        {"id": episode_id},
-    ).fetchall()
+    The four reads run inside ONE read-only REPEATABLE READ transaction so the detector sees a single
+    consistent snapshot — a concurrent resubmission (ingest adding a ClaimVersion+lines) committing between
+    reads can't show the detector a claim set and a line set from different instants, which would make a
+    retried job observe a different input (colliding with the deterministic-detector contract). The reads
+    take no row locks and the tx commits immediately, so detect()/the write tx still run lock-free after.
+    """
+    with conn.transaction():
+        conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+        ep = conn.execute(
+            """
+            SELECT "id", "patientToken", "facilityId", "startedAt", "endedAt", "importBatchId"
+            FROM "Episode" WHERE "id" = %(id)s
+            """,
+            {"id": episode_id},
+        ).fetchone()
+        if ep is None:
+            return None
 
-    # All lines for the episode in ONE query (join on the spine), grouped in Python — never per-claim.
-    line_rows = conn.execute(
-        """
-        SELECT l."claimVersionId", l."type", l."code", l."sequence", l."description", l."amount"
-        FROM "ClaimLine" l
-        JOIN "ClaimVersion" cv ON l."claimVersionId" = cv."id"
-        WHERE cv."episodeId" = %(id)s
-        ORDER BY cv."version", l."sequence", l."id"
-        """,
-        {"id": episode_id},
-    ).fetchall()
+        claim_rows = conn.execute(
+            """
+            SELECT "id", "version", "claimNo", "inacbgCode", "amount", "contentHash",
+                   "fingerprint", "status", "isCurrent", "submittedAt"
+            FROM "ClaimVersion" WHERE "episodeId" = %(id)s ORDER BY "version", "id"
+            """,
+            {"id": episode_id},
+        ).fetchall()
+
+        # All lines for the episode in ONE query (join on the spine), grouped in Python — never per-claim.
+        line_rows = conn.execute(
+            """
+            SELECT l."claimVersionId", l."type", l."code", l."sequence", l."description", l."amount"
+            FROM "ClaimLine" l
+            JOIN "ClaimVersion" cv ON l."claimVersionId" = cv."id"
+            WHERE cv."episodeId" = %(id)s
+            ORDER BY cv."version", l."sequence", l."id"
+            """,
+            {"id": episode_id},
+        ).fetchall()
+
+        evidence_rows = conn.execute(
+            """
+            SELECT "id", "kind", "objectKey", "payload", "contentHash", "fingerprint", "capturedAt"
+            FROM "EvidenceRecord" WHERE "episodeId" = %(id)s ORDER BY "capturedAt", "id"
+            """,
+            {"id": episode_id},
+        ).fetchall()
+
     lines_by_claim: dict[str, list[ClaimLineView]] = {}
     for r in line_rows:
         lines_by_claim.setdefault(r["claimVersionId"], []).append(
@@ -111,14 +129,6 @@ def load_episode(conn: psycopg.Connection, episode_id: str) -> Episode | None:
                 description=r["description"], amount=r["amount"],
             )
         )
-
-    evidence_rows = conn.execute(
-        """
-        SELECT "id", "kind", "objectKey", "payload", "contentHash", "fingerprint", "capturedAt"
-        FROM "EvidenceRecord" WHERE "episodeId" = %(id)s ORDER BY "capturedAt", "id"
-        """,
-        {"id": episode_id},
-    ).fetchall()
 
     claims = [
         ClaimVersionView(
