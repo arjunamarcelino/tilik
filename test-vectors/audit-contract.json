@@ -1,0 +1,6 @@
+{
+  "_spec": "Cross-service AuditEvent.action contract. The Python detector (services/detector) writes these action strings; the API / case-audit UI (Prompt 11) reads and filters by them. A rename on either side would silently mislabel or hide audit-timeline rows, so both sides assert against this file (TS: apps/api test:contract; Python: tests/test_outbox_contract.py). Only boundary-crossing actions live here — API-only actions stay inline.",
+  "actions": {
+    "DETECT": "DETECT"
+  }
+}

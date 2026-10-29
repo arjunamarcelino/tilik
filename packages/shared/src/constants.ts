@@ -16,14 +16,17 @@ export const OUTBOX_JOB_TYPE = {
 export type OutboxJobType = (typeof OUTBOX_JOB_TYPE)[keyof typeof OUTBOX_JOB_TYPE];
 
 /**
- * AuditEvent.action values written by the import pipeline.
+ * AuditEvent.action values that cross a service boundary.
  *
- * Convention: only actions that cross a service boundary (here: into the Python detector / the outbox) live
- * as shared constants. API-only actions (AUTH_LOGIN_FAILED, USER_LOGIN, ACCESS_DENIED) stay inline string
- * literals at their call sites — they need no shared contract.
+ * Convention: only actions that cross a service boundary live as shared constants. API-only actions
+ * (AUTH_LOGIN_FAILED, USER_LOGIN, ACCESS_DENIED) stay inline string literals at their call sites — they need
+ * no shared contract. IMPORT_STARTED/IMPORT are written by the import pipeline; DETECT is written by the
+ * Python detector and read by the case/audit UI (Prompt 11), so it is pinned both sides via
+ * test-vectors/audit-contract.json (TS: apps/api test:contract; Python: tests/test_outbox_contract.py).
  */
 export const AUDIT_ACTION = {
   IMPORT_STARTED: 'IMPORT_STARTED', // durable at key-claim: who/when, before any domain state lands
   IMPORT: 'IMPORT', // terminal, at finalize: the single per-batch audit row
+  DETECT: 'DETECT', // detector worker, per processed episode: a summary of what detection produced
 } as const;
 export type AuditAction = (typeof AUDIT_ACTION)[keyof typeof AUDIT_ACTION];

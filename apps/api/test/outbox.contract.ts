@@ -7,16 +7,22 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { OUTBOX_JOB_TYPE } from '@tilik/shared/constants';
+import { AUDIT_ACTION, OUTBOX_JOB_TYPE } from '@tilik/shared/constants';
 
 interface OutboxContract {
   jobType: string;
   payload: { v: number; keys: string[] };
 }
 
+interface AuditContract {
+  actions: Record<string, string>;
+}
+
 // apps/api is CommonJS — use __dirname, consistent with test/tokenize.vectors.ts.
-const fixturePath = resolve(__dirname, '..', '..', '..', 'test-vectors', 'outbox-contract.json');
-const contract = JSON.parse(readFileSync(fixturePath, 'utf8')) as OutboxContract;
+const vectors = resolve(__dirname, '..', '..', '..', 'test-vectors');
+const contract = JSON.parse(
+  readFileSync(resolve(vectors, 'outbox-contract.json'), 'utf8'),
+) as OutboxContract;
 
 assert.equal(
   OUTBOX_JOB_TYPE.DETECT_EPISODE,
@@ -26,3 +32,17 @@ assert.equal(
 assert.equal(contract.payload.v, 1, 'outbox payload version must be 1');
 
 console.log('✓ outbox contract matches @tilik/shared/constants');
+
+// Audit-action contract: the detector writes AUDIT_ACTION.DETECT and the case/audit UI reads it, so its
+// value is pinned both sides. A rename would silently mislabel the audit timeline.
+const audit = JSON.parse(
+  readFileSync(resolve(vectors, 'audit-contract.json'), 'utf8'),
+) as AuditContract;
+
+assert.equal(
+  AUDIT_ACTION.DETECT,
+  audit.actions.DETECT,
+  'AUDIT_ACTION.DETECT drifted from the shared audit contract',
+);
+
+console.log('✓ audit-action contract matches @tilik/shared/constants');
