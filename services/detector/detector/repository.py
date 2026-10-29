@@ -1,8 +1,9 @@
 """All SQL the worker issues. Centralised here so identifier-quoting and the lease-fence invariants live in
-one place (and a test can grep this file to prove no SQL is built with string interpolation).
+one place.
 
 Quoting: every Prisma identifier is camel/PascalCase and MUST be double-quoted. Values are ALWAYS passed as
-``%(name)s`` placeholders — never f-strings / ``%`` / ``.format`` / ``+`` (a test enforces this).
+``%(name)s`` placeholders — never f-strings / ``%`` / ``.format`` / ``+``. Enforced by
+``tests/test_source_guards.py`` (placeholder-only SQL constants + no ``str.format`` building).
 
 Lease fence: the terminal/requeue UPDATEs match on ``id AND status='PROCESSING' AND "lockedBy" = worker``,
 so a Prompt 08 reaper that requeued a stale row (and a peer that re-claimed it) cannot be clobbered. The

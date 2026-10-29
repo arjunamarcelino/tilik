@@ -2,8 +2,8 @@
 
 Security:
   * reads ``APP_DATABASE_URL`` ONLY — there is deliberately NO ``DATABASE_URL`` (owner) fallback, so no code
-    path can connect as the schema owner. A grep guard in the tests enforces that ``DATABASE_URL`` is never
-    referenced under ``detector/``.
+    path can connect as the schema owner. Enforced by
+    ``tests/test_source_guards.py::test_no_owner_database_url_key_in_source``.
   * does NOT read ``PATIENT_TOKEN_HMAC_KEY`` — the Prompt 07 worker tokenizes nothing at runtime (the vector
     test supplies the fixture's own key), so the real secret never enters this process. Wiring it is Prompt 08.
   * a redacting ``__repr__`` masks the DSN password, so a "loaded config" log line can never leak credentials.
