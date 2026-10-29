@@ -82,7 +82,7 @@ def detect_cloning(episode: Episode, corpus: Sequence[CloneDoc], cfg: Config) ->
     if not current_text.strip():
         return []  # narrative was all boilerplate
     if len(corpus) < CLONING_MIN_CORPUS:
-        return []  # idf collapses toward 1.0 on a tiny corpus → unreliable; precision guard
+        return []  # below the floor the max_df filter prunes even clone content → no detection (see config)
 
     corpus_texts = [strip_boilerplate(doc.narrative) for doc in corpus]
     sims = _cosine_against_corpus(current_text, corpus_texts)

@@ -131,6 +131,19 @@ def test_corpus_below_minimum_returns_no_finding() -> None:
     assert detect_cloning(episode, tiny, _cfg()) == []
 
 
+def test_clone_fires_at_the_minimum_working_corpus() -> None:
+    # The floor must be a WORKING floor: at exactly CLONING_MIN_CORPUS docs, a 2-member clone (current + one
+    # identical sibling) survives the max_df prune and flags. Guards against the floor silently drifting below
+    # the range where the method can fire (k <= max_df * N; see config.CLONING_MIN_CORPUS).
+    clone_text = "S: nyeri perut kanan bawah mcburney apendisitis leukositosis P: apendektomi cito profilaksis"
+    episode = _episode([_record(clone_text)])
+    sibling = CloneDoc("ev-sibling", "ep-sibling", clone_text)
+    fillers = [CloneDoc(f"ev-f{i}", f"ep-f{i}", f"S: catatan klinis unik nomor {i} dengan temuan berbeda {i}")
+               for i in range(CLONING_MIN_CORPUS - 1)]
+    findings = detect_cloning(episode, [sibling, *fillers], _cfg())
+    assert len(findings) == 1 and findings[0].score >= _cfg().cloning_threshold
+
+
 # --- strip_boilerplate --------------------------------------------------------------------------
 
 

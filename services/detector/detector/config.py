@@ -31,7 +31,13 @@ class ConfigError(SystemExit):
 _DEFAULT_REPEAT_EXCEPTION_CODES = frozenset({"39.95", "99.25"})  # hemodialysis, chemotherapy — legitimately repeatable
 _DEFAULT_CLONING_THRESHOLD = 0.85  # positives (clones) cluster ~0.97–1.0, negatives (SOAP) ~0.4–0.6 → 0.85 sits in the gap
 CLONING_HIGH_CUTOFF = 0.95  # cosine at/above which a CLONING finding is HIGH severity (else MEDIUM)
-CLONING_MIN_CORPUS = 3  # min comparison corpus size before cloning runs — idf collapses toward 1.0 below this
+# Min comparison corpus before cloning runs. This floor is set by the max_df filter, NOT just idf stability:
+# a k-member clone's distinctive terms have document frequency k (current + k-1 siblings), so they survive
+# the max_df prune only when k <= CLONING_MAX_DF * N (N = corpus + 1 doc). For the minimal 2-member clone
+# (k=2) that needs N >= 2/0.15 ≈ 14, i.e. a corpus of >= 13 — below that the shared content is pruned and
+# NO clone can ever be detected. So the floor is 13, not an arbitrary small number; larger clusters need
+# proportionally more corpus (k <= max_df * N). Below the floor, detect_cloning returns [] (fail-safe).
+CLONING_MIN_CORPUS = 13
 # Drop terms appearing in MORE than this fraction of the corpus before comparing. This is what separates
 # "copied distinctive content" (flagged) from "shared standardized structure" (not) — and is corpus-relative
 # (a fraction), so it holds as the corpus grows. Verified against the Prompt 04 manifest: a fraud clone's
