@@ -26,7 +26,7 @@ import psycopg
 
 from . import db, log, repository
 from .config import Config
-from .detectors import run_detectors
+from .detectors import needs_corpus, run_detectors
 from .models import CloneDoc, Episode, FindingDraft
 
 Logger = logging.LoggerAdapter | logging.Logger
@@ -105,8 +105,9 @@ def run_once(
             raise NonRetryableError(f"episode not found for job (episode_id={episode_id})")
 
         # Corpus load is a SEPARATE autocommit read (not inside load_episode's REPEATABLE READ snapshot),
-        # keeping detection between transactions — the cloning detector compares against it.
-        corpus = load_corpus(conn, episode_id)
+        # keeping detection between transactions. Skipped via needs_corpus when no detector needs it, so an
+        # episode with no medical record doesn't trigger a whole-table scan for nothing.
+        corpus = load_corpus(conn, episode_id) if needs_corpus(episode) else []
         drafts = detect(episode, corpus, cfg)
         # Findings-insert + mark-DONE in ONE transaction. mark_done raises LeaseLostError (rolling back the
         # insert) if a reaper preempted this worker — neither success nor failure.

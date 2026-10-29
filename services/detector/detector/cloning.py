@@ -73,6 +73,12 @@ def strip_boilerplate(narrative: str) -> str:
     return "\n".join(kept)
 
 
+def episode_has_comparable_record(episode: Episode) -> bool:
+    """True if the episode has a medical-record narrative worth comparing — lets the worker skip the
+    cross-episode corpus read when CLONING has nothing to compare (no narrative → detect_cloning returns [])."""
+    return _current_record(episode) is not None
+
+
 def detect_cloning(episode: Episode, corpus: Sequence[CloneDoc], cfg: Config) -> list[FindingDraft]:
     """Return at most one CLONING finding for this episode (listing all matched evidence)."""
     record = _current_record(episode)

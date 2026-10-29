@@ -16,17 +16,25 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from .cloning import detect_cloning
+from .cloning import detect_cloning, episode_has_comparable_record
 from .config import Config
 from .models import CloneDoc, Episode, FindingDraft
 from .repeat_billing import detect_repeat_billing
+
+
+def needs_corpus(episode: Episode) -> bool:
+    """Whether any detector needs the cross-episode clone corpus for this episode (today only CLONING, and
+    only when a medical-record narrative is present). Lets the worker skip the whole-table corpus read for
+    episodes with nothing to compare, without the worker knowing which detector wants a corpus or why.
+    """
+    return episode_has_comparable_record(episode)
 
 
 def run_detectors(episode: Episode, corpus: Sequence[CloneDoc], cfg: Config) -> list[FindingDraft]:
     """Run every detector for an episode and return the combined findings.
 
     ``corpus`` is the cross-episode medical-record set the CLONING detector compares against (loaded by the
-    worker via ``repository.load_clone_corpus``); REPEAT_BILLING ignores it.
+    worker via ``repository.load_clone_corpus`` when ``needs_corpus`` is true); REPEAT_BILLING ignores it.
     """
     return [
         *detect_repeat_billing(episode, cfg),
