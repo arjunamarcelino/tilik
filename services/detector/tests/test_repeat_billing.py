@@ -14,7 +14,7 @@ from decimal import Decimal
 from _bundle import load_episodes, load_labels, require_bundle
 
 from detector.config import Config
-from detector.models import ClaimLineView, ClaimVersionView, DetectorType, Episode, Severity
+from detector.models import ClaimLineView, ClaimVersionView, DetectorType, Episode, EvidenceLinkView, Severity
 from detector.repeat_billing import detect_repeat_billing
 
 
@@ -125,6 +125,22 @@ def test_same_code_twice_on_one_claim_is_not_a_duplicate() -> None:
     # One claim listing the procedure twice is one billing, not two.
     episode = _episode([_claim("C1", ["47.09", "47.09"])])
     assert detect_repeat_billing(episode, _cfg()) == []
+
+
+def test_evidence_refs_surface_claim_linked_evidence() -> None:
+    # The planted synthetic repeat-billing episodes carry no claim-linked evidence, so _linked_evidence is
+    # untested by the manifest cases. Here a 'sumber' link to a duplicated claim must appear in evidence_refs,
+    # proving the helper is live forward-looking behavior (real imports can attach operative reports etc.).
+    episode = Episode(
+        id="ep-x", patient_token="patient:x", facility_id="F",
+        started_at=datetime(2026, 3, 1, tzinfo=timezone.utc), ended_at=None, import_batch_id=None,
+        claims=[_claim("C1", ["47.09"], cid="cv-1"), _claim("C2", ["47.09"], cid="cv-2")],
+        evidence=[],
+        links=[EvidenceLinkView(evidence_id="ev-op", claim_version_id="cv-1", relation="sumber", note=None)],
+    )
+    findings = detect_repeat_billing(episode, _cfg())
+    assert len(findings) == 1
+    assert findings[0].evidence_refs == ["ev-op"]
 
 
 def test_dedupe_key_is_separator_safe_across_claim_numbers() -> None:
