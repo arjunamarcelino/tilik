@@ -145,9 +145,10 @@ class FindingDraft:
 
     ``dedupe_key`` is a deterministic per-finding identity (sha256 hex the detector computes). It backs the
     ``@@unique([episodeId, detector, dedupeKey])`` + ``ON CONFLICT DO NOTHING`` on insert, so a worker re-run
-    or reaper requeue can't double-insert. It must depend ONLY on the finding's identity (which procedure /
-    which matched evidence), never on the score — cloning's cosine drifts with the corpus, but identity must
-    stay stable so re-detection conflicts onto the frozen first row. ``reasons`` keeps a ``messages`` list of
+    or reaper requeue can't double-insert. It must depend ONLY on the finding's corpus-invariant identity —
+    the duplicated procedure + claim set for repeat-billing, the source medical-record id for cloning — never
+    on the score or the matched set (both drift as the corpus grows), so re-detection conflicts onto the
+    frozen first row. ``reasons`` keeps a ``messages`` list of
     human-readable Indonesian triggers plus a structured ``detail`` object; it must never carry narrative
     text or the patient token (it lands in a DB column the redacting ``__repr__`` can't protect).
     """

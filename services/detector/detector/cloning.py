@@ -23,9 +23,10 @@ Method (explainable + deterministic, not a black box):
 
 Determinism: ``TfidfVectorizer`` sorts its vocabulary (document order only permutes rows, never indices),
 and cosine stays on the sparse path (no multithreaded BLAS) — so a FIXED corpus yields bit-identical scores.
-The corpus is read in its own snapshot, so after new imports idf shifts and the same pair's score drifts;
-finding *identity* (the dedupe key = the sorted matched-evidence set) stays stable, and ON CONFLICT freezes
-the first-written score.
+The corpus is read in its own snapshot, so after new imports idf shifts and the same pair's score drifts.
+Finding *identity* (the dedupe key) is anchored on the source record id, NOT the matched set — so it is
+corpus-invariant: a re-detect after the corpus grew still conflicts onto the first row, and ON CONFLICT
+freezes its first-written score/matched set. (The matched evidence lives in ``reasons``, as payload.)
 """
 
 from __future__ import annotations
@@ -140,7 +141,11 @@ def _build_finding(
         severity=severity,
         reasons=reasons,
         evidence_refs=matched_evidence,
-        dedupe_key=hashlib.sha256("|".join(matched_evidence).encode("utf-8")).hexdigest(),
+        # Identity is (episode, CLONING) anchored on the source record id. detect_cloning emits at most one
+        # finding per episode, and the matched-evidence set is PAYLOAD that shifts as the corpus grows (a
+        # later-imported sibling would change it); keying on the stable record id keeps a re-detect
+        # conflicting onto the first row regardless of corpus drift — the frozen-first-write guarantee.
+        dedupe_key=hashlib.sha256(record.id.encode("utf-8")).hexdigest(),
         claim_version_id=_source_claim(episode, record.id),
     )
 
