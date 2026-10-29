@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import signal
 import threading
+import logging
 from enum import StrEnum, auto
 from typing import Any, Callable
 
@@ -25,7 +26,9 @@ import psycopg
 from . import db, log, repository
 from .config import Config
 from .detectors import run_detectors
-from .models import Episode
+from .models import Episode, FindingDraft
+
+Logger = logging.LoggerAdapter | logging.Logger
 
 
 class NonRetryableError(RuntimeError):
@@ -41,10 +44,10 @@ class Outcome(StrEnum):
 class Tick(StrEnum):
     IDLE = auto()        # no job was claimable → sleep the poll interval
     PROGRESSED = auto()  # a job reached a terminal state → drain immediately
-    REQUEUED = auto()    # a job was requeued → brief backoff so we don't re-claim it instantly
+    REQUEUED = auto()    # a job was requeued → wait the poll interval before polling again (no instant re-claim)
 
 
-def classify_error(exc: BaseException) -> Outcome:
+def classify_error(exc: Exception) -> Outcome:
     """Classify by exception type (never message text). SerializationFailure/DeadlockDetected subclass
     OperationalError, so they MUST be checked first."""
     if isinstance(exc, (psycopg.errors.SerializationFailure, psycopg.errors.DeadlockDetected)):
@@ -74,9 +77,9 @@ def validate_payload(payload: Any) -> str:
 def run_once(
     conn: psycopg.Connection,
     cfg: Config,
-    logger: Any,
+    logger: Logger,
     *,
-    detect: Callable[[Episode], list] = run_detectors,
+    detect: Callable[[Episode], list[FindingDraft]] = run_detectors,
 ) -> Tick:
     """Claim and process at most one job. Returns a ``Tick`` telling the loop whether to drain or sleep.
 
@@ -107,11 +110,18 @@ def run_once(
     except repository.LeaseLostError:
         logger.warning("job lease lost (preempted) — discarded", extra=ctx)
         return Tick.PROGRESSED
-    except BaseException as exc:  # noqa: BLE001 — deliberately classify everything
+    except Exception as exc:  # classify application errors against the job; control-flow exceptions propagate
         return _resolve_failure(conn, cfg, logger, job, exc, ctx)
 
 
-def _resolve_failure(conn, cfg, logger, job, exc, ctx) -> Tick:
+def _resolve_failure(
+    conn: psycopg.Connection,
+    cfg: Config,
+    logger: Logger,
+    job: dict[str, Any],
+    exc: Exception,
+    ctx: dict[str, Any],
+) -> Tick:
     outcome = classify_error(exc)
     if outcome is Outcome.RECONNECT:
         raise exc  # bubble to run_forever; the PROCESSING row is left for the Prompt 08 reaper
@@ -138,7 +148,7 @@ def _resolve_failure(conn, cfg, logger, job, exc, ctx) -> Tick:
 def run_forever(
     cfg: Config,
     stop_event: threading.Event,
-    logger: Any,
+    logger: Logger,
     *,
     connect: Callable[[str], psycopg.Connection] = db.connect,
 ) -> None:
