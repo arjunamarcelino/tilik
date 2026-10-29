@@ -96,6 +96,7 @@ model Episode {
   claims        ClaimVersion[]
   evidence      EvidenceRecord[]
   findings      Finding[]
+  case          Case? // Prompt 09: one aggregated Case per episode (Case.episodeId @unique)
 
   @@index([patientToken])
   @@index([facilityId])
@@ -221,7 +222,14 @@ model Finding {
 
 model Case {
   id         String     @id @default(cuid())
+  // One Case per Episode (Prompt 09 aggregation). The @unique makes find-or-create idempotent on
+  // re-detection (ON CONFLICT (episodeId)); a cross-episode clone ring surfaces as N sibling Cases.
+  episode    Episode    @relation(fields: [episodeId], references: [id], onDelete: Restrict)
+  episodeId  String     @unique
   status     CaseStatus @default(OPEN)
+  // Derived triage severity = max over the Case's findings; the worker recomputes it from the persisted
+  // findings on every detection run (reasons: cloning's severity drifts with the corpus).
+  severity   Severity
   assignedTo String?
   summary    String?
   createdAt  DateTime   @default(now())
