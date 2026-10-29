@@ -1,0 +1,8 @@
+{
+  "_spec": "Cross-service outbox contract. The API (apps/api/src/imports) enqueues jobs of this type with this payload shape; the Python detector (services/detector) polls for this EXACT type and reads this payload. A rename on either side would make the worker poll for a type that is never enqueued — a silent, zero-error stall — so both sides assert against this file (TS: apps/api test:contract; Python: tests/test_outbox_contract.py).",
+  "jobType": "DETECT_EPISODE",
+  "payload": {
+    "v": 1,
+    "keys": ["v", "episodeId", "importBatchId"]
+  }
+}
