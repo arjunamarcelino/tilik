@@ -25,7 +25,6 @@ from .models import (
     Episode,
     EvidenceView,
     FindingDraft,
-    JobStatus,
 )
 
 DETECT_EPISODE = "DETECT_EPISODE"  # OutboxJob.type (mirror of @tilik/shared/constants OUTBOX_JOB_TYPE)
@@ -214,10 +213,3 @@ def requeue(conn: psycopg.Connection, job_id: str, worker_id: str) -> bool:
 def mark_failed(conn: psycopg.Connection, job_id: str, worker_id: str) -> bool:
     """Mark FAILED (attempts+1). Returns False if the lease was lost (no-op)."""
     return conn.execute(_FAIL_SQL, {"id": job_id, "worker": worker_id}).rowcount > 0
-
-
-# Re-exported so callers don't import JobStatus just for comparisons.
-__all__ = [
-    "DETECT_EPISODE", "JobStatus", "LeaseLostError",
-    "claim_job", "load_episode", "insert_findings", "mark_done", "requeue", "mark_failed",
-]

@@ -9,7 +9,6 @@ the schema. A single long-lived connection is used (a pool buys nothing for a si
 
 from __future__ import annotations
 
-import logging
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import psycopg
@@ -75,9 +74,3 @@ def assert_non_owner(conn: psycopg.Connection) -> None:
             f"connected to Postgres as {role!r}, expected {EXPECTED_ROLE!r} — "
             "the append-only guarantee would not bind. Check APP_DATABASE_URL."
         )
-
-
-def reconnect(dsn: str, logger: logging.LoggerAdapter | logging.Logger, attempt: int) -> psycopg.Connection:
-    """Open a fresh connection after a transient failure, re-asserting the role. DSN is never logged."""
-    logger.warning("reconnecting to database", extra={"reconnect_attempt": attempt})
-    return connect(dsn)

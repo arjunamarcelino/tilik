@@ -22,13 +22,6 @@ from enum import StrEnum
 from typing import Any
 
 
-class JobStatus(StrEnum):
-    PENDING = "PENDING"
-    PROCESSING = "PROCESSING"
-    DONE = "DONE"
-    FAILED = "FAILED"
-
-
 class DetectorType(StrEnum):
     REPEAT_BILLING = "REPEAT_BILLING"
     CLONING = "CLONING"
