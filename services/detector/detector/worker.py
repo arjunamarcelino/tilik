@@ -18,6 +18,7 @@ from __future__ import annotations
 import signal
 import threading
 import logging
+from collections.abc import Sequence
 from enum import StrEnum, auto
 from typing import Any, Callable
 
@@ -26,9 +27,11 @@ import psycopg
 from . import db, log, repository
 from .config import Config
 from .detectors import run_detectors
-from .models import Episode, FindingDraft
+from .models import CloneDoc, Episode, FindingDraft
 
 Logger = logging.LoggerAdapter | logging.Logger
+Detect = Callable[[Episode, Sequence[CloneDoc], Config], list[FindingDraft]]
+LoadCorpus = Callable[[psycopg.Connection, str], list[CloneDoc]]
 
 
 class NonRetryableError(RuntimeError):
@@ -79,12 +82,14 @@ def run_once(
     cfg: Config,
     logger: Logger,
     *,
-    detect: Callable[[Episode], list[FindingDraft]] = run_detectors,
+    detect: Detect = run_detectors,
+    load_corpus: LoadCorpus = repository.load_clone_corpus,
 ) -> Tick:
     """Claim and process at most one job. Returns a ``Tick`` telling the loop whether to drain or sleep.
 
     Reconnect-class errors propagate to the caller (the connection is unusable). All other errors are
-    classified and resolved against the job here.
+    classified and resolved against the job here. ``detect``/``load_corpus`` are injectable seams so the
+    loop logic is unit-drivable without real detection or a populated corpus.
     """
     job = repository.claim_job(conn, cfg.worker_id)
     if job is None:
@@ -99,7 +104,10 @@ def run_once(
         if episode is None:
             raise NonRetryableError(f"episode not found for job (episode_id={episode_id})")
 
-        drafts = detect(episode)
+        # Corpus load is a SEPARATE autocommit read (not inside load_episode's REPEATABLE READ snapshot),
+        # keeping detection between transactions — the cloning detector compares against it.
+        corpus = load_corpus(conn, episode_id)
+        drafts = detect(episode, corpus, cfg)
         # Findings-insert + mark-DONE in ONE transaction. mark_done raises LeaseLostError (rolling back the
         # insert) if a reaper preempted this worker — neither success nor failure.
         with conn.transaction():

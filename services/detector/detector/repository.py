@@ -23,6 +23,7 @@ from psycopg.types.json import Jsonb
 from .models import (
     ClaimLineView,
     ClaimVersionView,
+    CloneDoc,
     Episode,
     EvidenceLinkView,
     EvidenceView,
@@ -177,22 +178,66 @@ def load_episode(conn: psycopg.Connection, episode_id: str) -> Episode | None:
     )
 
 
-# --- Findings (write path — shaped for Prompt 08; stub writes nothing today) --------------------
+# --- Clone corpus (cross-episode comparison set for the CLONING detector) -----------------------
+
+# All OTHER episodes' medical-record narratives, deterministically ordered by evidence id so the TF-IDF
+# vocabulary indices are stable across runs. Excludes the current episode by id (NEVER by narrative text — a
+# true clone is byte-identical and a text exclusion would wrongly drop the match). Whole-DB (not filtered by
+# importBatchId): clones are planted across episodes/batches. Placeholder-only; narrative presence is
+# filtered in Python so the SQL stays a plain constant.
+_CLONE_CORPUS_SQL = """
+SELECT "id", "episodeId", "payload"
+FROM "EvidenceRecord"
+WHERE "episodeId" <> %(ep)s AND "kind" = 'MEDICAL_RECORD'
+ORDER BY "id"
+"""
+
+
+def load_clone_corpus(conn: psycopg.Connection, exclude_episode_id: str) -> list[CloneDoc]:
+    """Load every other episode's medical-record narrative as the cloning comparison corpus.
+
+    Runs as its own autocommit read (the worker calls it BETWEEN ``load_episode``'s REPEATABLE READ snapshot
+    and the write transaction) — so the corpus is a separate snapshot. This is exactly why cloning's score is
+    reproducible only for a *fixed* corpus: a retry after new imports legitimately sees different idf.
+    """
+    rows = conn.execute(_CLONE_CORPUS_SQL, {"ep": exclude_episode_id}).fetchall()
+    corpus: list[CloneDoc] = []
+    for r in rows:
+        payload = r["payload"] or {}
+        narrative = payload.get("narrative")
+        if isinstance(narrative, str) and narrative.strip():
+            corpus.append(CloneDoc(evidence_id=r["id"], episode_id=r["episodeId"], narrative=narrative))
+    return corpus
+
+
+# --- Findings (write path) ----------------------------------------------------------------------
 
 
 def insert_findings(conn: psycopg.Connection, episode_id: str, drafts: list[FindingDraft]) -> None:
-    """Insert Finding rows. ``reasons``/``evidenceRefs`` are wrapped with Jsonb (psycopg won't auto-adapt).
+    """Insert Finding rows idempotently. ``reasons``/``evidenceRefs`` are wrapped with Jsonb (psycopg won't
+    auto-adapt dict/list → jsonb).
 
     ``Finding.id`` has no DB default (Prisma mints a cuid client-side), so the id is generated here — a
-    uuid, consistent with how the import pipeline mints episode ids. No-op when ``drafts`` is empty.
+    uuid, consistent with how the import pipeline mints ids. ``dedupeKey`` is the detector-computed identity
+    backing ``@@unique([episodeId, detector, dedupeKey])``.
+
+    IDEMPOTENCY: ``ON CONFLICT … DO NOTHING`` means a re-detect (worker re-run, or a reaper requeue + peer
+    re-processing) conflicts onto the existing row instead of duplicating — Finding has no other natural key.
+    A conflict-skip yields ``rowcount == 0`` on that statement, which is **success, not a lease loss**: the
+    ``rowcount == 0 → LeaseLostError`` fence rule is confined to the OutboxJob mark_done/requeue UPDATEs
+    (below). This function MUST NOT inspect rowcount — a future "safety" assert here would turn every
+    legitimate dedupe skip into a transaction-rolling-back LeaseLostError and silently discard the job.
+    No-op when ``drafts`` is empty.
     """
     for d in drafts:
         conn.execute(
             """
             INSERT INTO "Finding"
-                ("id", "episodeId", "claimVersionId", "detector", "score", "severity", "reasons", "evidenceRefs")
+                ("id", "episodeId", "claimVersionId", "detector", "score", "severity", "reasons",
+                 "evidenceRefs", "dedupeKey")
             VALUES (%(id)s, %(episodeId)s, %(claimVersionId)s, %(detector)s, %(score)s, %(severity)s,
-                    %(reasons)s, %(evidenceRefs)s)
+                    %(reasons)s, %(evidenceRefs)s, %(dedupeKey)s)
+            ON CONFLICT ("episodeId", "detector", "dedupeKey") DO NOTHING
             """,
             {
                 "id": uuid.uuid4().hex,
@@ -203,6 +248,7 @@ def insert_findings(conn: psycopg.Connection, episode_id: str, drafts: list[Find
                 "severity": str(d.severity),
                 "reasons": Jsonb(d.reasons),
                 "evidenceRefs": Jsonb(d.evidence_refs),
+                "dedupeKey": d.dedupe_key,
             },
         )
 

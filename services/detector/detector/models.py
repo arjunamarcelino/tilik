@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
-from typing import Any
+from typing import Any, NamedTuple
 
 
 class DetectorType(StrEnum):
@@ -121,6 +121,18 @@ class Episode:
         )
 
 
+class CloneDoc(NamedTuple):
+    """One comparison document for the CLONING detector: a medical-record narrative from ANOTHER episode.
+
+    A ``NamedTuple`` (not a bare ``tuple[str, str, str]``) so the three same-typed string fields can't be
+    silently transposed between the SQL projection and the detector's use — the type checker catches it.
+    """
+
+    evidence_id: str
+    episode_id: str
+    narrative: str
+
+
 @dataclass(frozen=True)
 class FindingDraft:
     """What a detector emits. Mapped to a ``Finding`` row by ``repository.insert_findings``.
@@ -130,6 +142,14 @@ class FindingDraft:
       * ``evidence_refs`` serialises to a JSON **array** (``jsonb_typeof = 'array'``) — use ``[]`` for none.
     ``reasons``/``evidence_refs`` are wrapped with ``psycopg.types.json.Jsonb`` on insert (psycopg does not
     auto-adapt ``dict``/``list`` to ``jsonb``).
+
+    ``dedupe_key`` is a deterministic per-finding identity (sha256 hex the detector computes). It backs the
+    ``@@unique([episodeId, detector, dedupeKey])`` + ``ON CONFLICT DO NOTHING`` on insert, so a worker re-run
+    or reaper requeue can't double-insert. It must depend ONLY on the finding's identity (which procedure /
+    which matched evidence), never on the score — cloning's cosine drifts with the corpus, but identity must
+    stay stable so re-detection conflicts onto the frozen first row. ``reasons`` keeps a ``messages`` list of
+    human-readable Indonesian triggers plus a structured ``detail`` object; it must never carry narrative
+    text or the patient token (it lands in a DB column the redacting ``__repr__`` can't protect).
     """
 
     detector: DetectorType
@@ -137,6 +157,7 @@ class FindingDraft:
     severity: Severity
     reasons: dict[str, Any]
     evidence_refs: list[str]
+    dedupe_key: str
     claim_version_id: str | None = None
 
     def __repr__(self) -> str:  # omit reasons (may carry clinical explanation text)

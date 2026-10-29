@@ -8,11 +8,11 @@ from _helpers import make_config, test_logger
 from detector.worker import Tick, run_once
 
 
-def _raise_retryable(_episode):
+def _raise_retryable(_episode, _corpus, _cfg):
     raise psycopg.errors.SerializationFailure("transient — retry me")
 
 
-def _raise_permanent(_episode):
+def _raise_permanent(_episode, _corpus, _cfg):
     raise ValueError("permanent — do not retry")
 
 

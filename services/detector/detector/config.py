@@ -12,6 +12,7 @@ Security:
 from __future__ import annotations
 
 import os
+import math
 import socket
 import uuid
 import logging
@@ -21,6 +22,24 @@ from urllib.parse import urlsplit
 
 class ConfigError(SystemExit):
     """Fatal misconfiguration — exit non-zero at boot rather than run degraded."""
+
+
+# Detector tuning. The two values genuinely worth tuning at the demo (the repeat-billing exception set — the
+# precision mechanism — and the cloning cosine threshold) are env-configurable on Config below. The rest
+# (cloning severity cutoff, min corpus) are named module constants: never asserted downstream, never retuned
+# at runtime, so a constant satisfies "no magic numbers" without the env field + parser + docs overhead.
+_DEFAULT_REPEAT_EXCEPTION_CODES = frozenset({"39.95", "99.25"})  # hemodialysis, chemotherapy — legitimately repeatable
+_DEFAULT_CLONING_THRESHOLD = 0.85  # positives (clones) cluster ~0.97–1.0, negatives (SOAP) ~0.4–0.6 → 0.85 sits in the gap
+CLONING_HIGH_CUTOFF = 0.95  # cosine at/above which a CLONING finding is HIGH severity (else MEDIUM)
+CLONING_MIN_CORPUS = 3  # min comparison corpus size before cloning runs — idf collapses toward 1.0 below this
+# Drop terms appearing in MORE than this fraction of the corpus before comparing. This is what separates
+# "copied distinctive content" (flagged) from "shared standardized structure" (not) — and is corpus-relative
+# (a fraction), so it holds as the corpus grows. Verified against the Prompt 04 manifest: a fraud clone's
+# distinctive clinical terms sit in ~9% of narratives (survive) while a SOAP template's scaffold AND its
+# low-cardinality complaint/vitals text are corpus-common (filtered) — so exact-duplicate SOAP forms, which
+# a plain cosine scores 1.0 (identical vectors, idf cancels), drop to ~0 and stop over-flagging clean/
+# exception episodes. See docs/solutions for the empirical separation.
+CLONING_MAX_DF = 0.15
 
 
 def _redact_dsn(dsn: str) -> str:
@@ -61,6 +80,9 @@ class Config:
     max_attempts: int
     log_level: str
     worker_id: str
+    # Detector tuning (defaulted so test helpers / direct construction need not supply them).
+    repeat_exception_codes: frozenset[str] = _DEFAULT_REPEAT_EXCEPTION_CODES
+    cloning_threshold: float = _DEFAULT_CLONING_THRESHOLD
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> Config:
@@ -80,13 +102,21 @@ class Config:
             max_attempts=max_attempts,
             log_level=log_level,
             worker_id=env.get("DETECTOR_WORKER_ID", "").strip() or _default_worker_id(),
+            repeat_exception_codes=_parse_code_set(
+                env, "DETECTOR_REPEAT_EXCEPTION_CODES", _DEFAULT_REPEAT_EXCEPTION_CODES
+            ),
+            cloning_threshold=_parse_float(
+                env, "DETECTOR_CLONING_THRESHOLD", _DEFAULT_CLONING_THRESHOLD, lo=0.0, hi=1.0
+            ),
         )
 
     def __repr__(self) -> str:  # never render the DSN password
         return (
             f"Config(app_database_url={_redact_dsn(self.app_database_url)!r}, "
             f"poll_interval_s={self.poll_interval_s}, max_attempts={self.max_attempts}, "
-            f"log_level={self.log_level!r}, worker_id={self.worker_id!r})"
+            f"log_level={self.log_level!r}, worker_id={self.worker_id!r}, "
+            f"repeat_exception_codes={sorted(self.repeat_exception_codes)!r}, "
+            f"cloning_threshold={self.cloning_threshold})"
         )
 
 
@@ -101,6 +131,35 @@ def _parse_int(env: dict[str, str], key: str, default: int, *, minimum: int) -> 
     if value < minimum:
         raise ConfigError(f"FATAL: {key} must be >= {minimum}, got {value}.")
     return value
+
+
+def _parse_float(env: dict[str, str], key: str, default: float, *, lo: float, hi: float) -> float:
+    """Parse a bounded float, fail-fast. Rejects NaN/inf explicitly: ``float("nan")`` parses without error
+    and clears any ``lo <= v <= hi`` check (every comparison with NaN is False), so a ``…=nan`` threshold
+    would silently flag nothing — exactly the degraded-but-booted state this config is meant to prevent."""
+    raw = env.get(key, "").strip()
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise ConfigError(f"FATAL: {key} must be a number, got {raw!r}.") from exc
+    if not math.isfinite(value):
+        raise ConfigError(f"FATAL: {key} must be a finite number, got {raw!r}.")
+    if value < lo or value > hi:
+        raise ConfigError(f"FATAL: {key} must be in [{lo}, {hi}], got {value}.")
+    return value
+
+
+def _parse_code_set(env: dict[str, str], key: str, default: frozenset[str]) -> frozenset[str]:
+    """Parse a comma-separated code set. Codes carry dots (ICD-9-CM, e.g. ``39.95``) — kept as strings, no
+    numeric coercion. Distinguishes *unset* (key absent → the default set) from *explicitly empty*
+    (``DETECTOR_REPEAT_EXCEPTION_CODES=`` → the operator opts out of all exceptions, honoured as an empty
+    set) — collapsing the two would make the exception list impossible to disable."""
+    raw = env.get(key)
+    if raw is None:
+        return default
+    return frozenset(code.strip() for code in raw.split(",") if code.strip())
 
 
 def _parse_log_level(env: dict[str, str]) -> str:
