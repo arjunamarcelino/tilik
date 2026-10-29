@@ -19,6 +19,7 @@ key is order-independent, so a retried job produces identical findings.
 from __future__ import annotations
 
 import hashlib
+import json
 
 from .config import Config
 from .models import ClaimVersionView, DetectorType, Episode, FindingDraft, Severity
@@ -73,9 +74,13 @@ def _build_finding(episode: Episode, code: str, day: str, claims_on_day: dict[st
         severity=Severity.HIGH,
         reasons=reasons,
         evidence_refs=_linked_evidence(episode, claim_version_ids),
-        # '|' is a safe separator: procedure codes and claim numbers never contain it. Key excludes day/score
-        # so identity is stable; the claim_no set already uniquely identifies the duplicated billing.
-        dedupe_key=hashlib.sha256("|".join([code, *claim_nos]).encode("utf-8")).hexdigest(),
+        # Key off a canonical JSON array, not a delimiter-joined string: claimNo is an unconstrained string at
+        # the import boundary, so a "|"-join could let two distinct duplicated billings collide and silently
+        # drop one under ON CONFLICT (a fraud false-negative). JSON escaping makes the encoding injective. Key
+        # excludes day/score so identity stays corpus-invariant; the claim_no set uniquely identifies it.
+        dedupe_key=hashlib.sha256(
+            json.dumps([code, claim_nos], separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+        ).hexdigest(),
         claim_version_id=min(claim_version_ids),  # deterministic: the lowest-id duplicate
     )
 

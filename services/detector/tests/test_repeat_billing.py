@@ -127,6 +127,17 @@ def test_same_code_twice_on_one_claim_is_not_a_duplicate() -> None:
     assert detect_repeat_billing(episode, _cfg()) == []
 
 
+def test_dedupe_key_is_separator_safe_across_claim_numbers() -> None:
+    # claimNo is unconstrained, so a delimiter-joined key could collide: ("B|C","D") and ("B","C|D") both
+    # flatten to "47.09|B|C|D". The canonical-JSON key must keep these two distinct findings distinct, else
+    # ON CONFLICT would silently drop a genuine fraud finding.
+    cfg = _cfg()
+    a = detect_repeat_billing(_episode([_claim("B|C", ["47.09"]), _claim("D", ["47.09"])]), cfg)
+    b = detect_repeat_billing(_episode([_claim("B", ["47.09"]), _claim("C|D", ["47.09"])]), cfg)
+    assert len(a) == 1 and len(b) == 1
+    assert a[0].dedupe_key != b[0].dedupe_key
+
+
 def test_explicitly_empty_exception_set_flags_dialysis() -> None:
     # Operator opt-out: an empty exception set means even repeatable codes are flagged when duplicated.
     episode = _episode([_claim("C1", ["39.95"]), _claim("C2", ["39.95"])])
