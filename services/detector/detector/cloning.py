@@ -89,29 +89,34 @@ def detect_cloning(episode: Episode, corpus: Sequence[CloneDoc], cfg: Config) ->
     if sims is None:
         return []  # empty vocabulary (all-boilerplate corpus) — nothing to compare
 
-    matches = [(corpus[i], min(1.0, sims[i])) for i in range(len(corpus)) if sims[i] >= cfg.cloning_threshold]
+    # Carry each match's corpus index so the best-match text is a direct lookup — no fragile, O(n)
+    # corpus.index(best_doc) value-equality rescan (which compares full narratives field-by-field).
+    matches = [
+        (i, doc, min(1.0, sims[i]))
+        for i, doc in enumerate(corpus)
+        if sims[i] >= cfg.cloning_threshold
+    ]
     if not matches:
         return []
 
-    return [_build_finding(episode, record, corpus, corpus_texts, current_text, sims, matches, cfg)]
+    return [_build_finding(episode, record, corpus_texts, current_text, sims, matches, cfg)]
 
 
 def _build_finding(
     episode: Episode,
     record: EvidenceView,
-    corpus: Sequence[CloneDoc],
     corpus_texts: list[str],
     current_text: str,
     sims: list[float],
-    matches: list[tuple[CloneDoc, float]],
+    matches: list[tuple[int, CloneDoc, float]],
     cfg: Config,
 ) -> FindingDraft:
-    max_cosine = max(score for _, score in matches)
-    best_doc = max(matches, key=lambda m: m[1])[0]
-    best_text = corpus_texts[corpus.index(best_doc)]
+    max_cosine = max(score for _, _, score in matches)
+    best_i = max(matches, key=lambda m: m[2])[0]
+    best_text = corpus_texts[best_i]
 
-    matched_evidence = sorted({record.id} | {doc.evidence_id for doc, _ in matches})
-    matched_episodes = sorted({doc.episode_id for doc, _ in matches})
+    matched_evidence = sorted({record.id} | {doc.evidence_id for _, doc, _ in matches})
+    matched_episodes = sorted({doc.episode_id for _, doc, _ in matches})
     shared_span = _longest_shared_span_words(current_text, best_text)
     # Negative contrast: the best score among NON-matching corpus docs — "vs unrelated SOAP ~0.40" — preempts
     # the "all SOAP notes look alike" objection. None if every corpus doc matched.
