@@ -139,7 +139,11 @@ def _resolve_failure(
         return Tick.PROGRESSED
 
     if repository.mark_failed(conn, job_id, cfg.worker_id):
-        logger.error("job failed", extra=err_ctx, exc_info=exc)
+        # Don't attach exc_info for psycopg errors: the server message/DETAIL can echo row values (clinical
+        # content once detectors write Findings). error_type + sqlstate in err_ctx are enough; keep the
+        # traceback only for logic errors (ValueError/NonRetryableError), whose messages we control.
+        db_error = isinstance(exc, psycopg.Error)
+        logger.error("job failed", extra=err_ctx, exc_info=None if db_error else exc)
     else:
         logger.warning("job lease lost on fail — discarded", extra=err_ctx)
     return Tick.PROGRESSED

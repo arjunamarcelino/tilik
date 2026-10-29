@@ -47,6 +47,9 @@ class ClaimLineView:
     description: str | None
     amount: Decimal | None  # Decimal, never float — matches the canonical money() 2-dp rule
 
+    def __repr__(self) -> str:  # omit code/description/amount (clinical content)
+        return f"ClaimLineView(type={self.type!r}, sequence={self.sequence})"
+
 
 @dataclass(frozen=True)
 class ClaimVersionView:
@@ -116,3 +119,9 @@ class FindingDraft:
     reasons: dict[str, Any]
     evidence_refs: list[str]
     claim_version_id: str | None = None
+
+    def __repr__(self) -> str:  # omit reasons (may carry clinical explanation text)
+        return (
+            f"FindingDraft(detector={self.detector}, severity={self.severity}, "
+            f"score={self.score}, evidence_refs={len(self.evidence_refs)})"
+        )

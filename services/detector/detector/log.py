@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
+from datetime import datetime, timezone
 from typing import Any
 
 # Standard LogRecord attributes — everything else in ``record.__dict__`` is caller context from ``extra=``.
@@ -26,8 +27,10 @@ class JsonFormatter(logging.Formatter):
     """Serialise each record as a single JSON line."""
 
     def format(self, record: logging.LogRecord) -> str:
+        # Explicit UTC ISO-8601 (…Z), not local-time-with-offset — collectors shouldn't have to guess the zone.
+        ts = datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(timespec="milliseconds")
         payload: dict[str, Any] = {
-            "ts": self.formatTime(record, "%Y-%m-%dT%H:%M:%S%z"),
+            "ts": ts.replace("+00:00", "Z"),
             "level": record.levelname.lower(),
             "msg": record.getMessage(),
         }
