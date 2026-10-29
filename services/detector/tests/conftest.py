@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -25,6 +26,30 @@ from psycopg.types.json import Jsonb
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _SEED_STARTED_AT = datetime(2026, 1, 1, 0, 0, 0)  # fixed, naive (DB column is `timestamp` without zone)
+# Prefixes for all test-created rows — used both to tag and to sweep orphans from a crashed prior run.
+_TEST_ID_PREFIXES = ("test-ep-", "test-job-", "e2e-ep-", "e2e-job-", "linktest-")
+
+
+@dataclass(frozen=True)
+class _Dsn:
+    """Wraps the test DSN so a credential never shows up verbatim under ``pytest --showlocals``."""
+
+    value: str
+
+    def __repr__(self) -> str:
+        return "<test-dsn redacted>"
+
+
+def _sweep_orphans(conn) -> None:
+    """Delete test-tagged rows left by a crashed prior run so the suite is self-healing. Touches ONLY rows
+    whose ids carry a test prefix — never real data. (Append-only evidence/claims can't be deleted by
+    tilik_app, so linktest Episodes with evidence may persist; harmless with unique ids.)"""
+    conn.execute("DELETE FROM \"OutboxJob\" WHERE \"id\" LIKE 'test-job-%' OR \"id\" LIKE 'e2e-job-%'")
+    conn.execute(
+        'DELETE FROM "Finding" WHERE "episodeId" IN '
+        "(SELECT \"id\" FROM \"Episode\" WHERE \"id\" LIKE 'test-ep-%' OR \"id\" LIKE 'e2e-ep-%')"
+    )
+    conn.execute("DELETE FROM \"Episode\" WHERE \"id\" LIKE 'test-ep-%' OR \"id\" LIKE 'e2e-ep-%'")
 
 
 def _load_repo_env() -> None:
@@ -40,7 +65,7 @@ def _load_repo_env() -> None:
 
 
 @pytest.fixture(scope="session")
-def db_dsn() -> str:
+def db_dsn() -> _Dsn:
     from detector import db
 
     _load_repo_env()
@@ -55,6 +80,7 @@ def db_dsn() -> str:
         pytest.skip(f"database unreachable ({type(exc).__name__}) — skipping DB integration tests")
 
     try:
+        _sweep_orphans(conn)  # self-heal from a crashed prior run before the clean-outbox check below
         pending = conn.execute(
             "SELECT count(*) AS n FROM \"OutboxJob\" WHERE status='PENDING' AND type='DETECT_EPISODE'"
         ).fetchone()["n"]
@@ -66,14 +92,14 @@ def db_dsn() -> str:
             f"APP_DATABASE_URL outbox has {pending} pending DETECT_EPISODE jobs — set "
             "DETECTOR_TEST_DATABASE_URL to an isolated DB to run these tests without claiming real work"
         )
-    return dsn
+    return _Dsn(dsn)
 
 
 @pytest.fixture
 def conn(db_dsn):
     from detector import db
 
-    c = db.connect(db_dsn)
+    c = db.connect(db_dsn.value)
     yield c
     c.close()
 

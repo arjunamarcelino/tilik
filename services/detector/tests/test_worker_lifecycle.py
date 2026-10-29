@@ -10,7 +10,7 @@ from detector.worker import Tick, run_once
 def test_pending_to_processing_to_done(conn, factory, db_dsn) -> None:
     episode_id = factory.episode()
     job_id = factory.job(episode_id)
-    cfg = make_config(db_dsn)
+    cfg = make_config(db_dsn.value)
 
     tick = run_once(conn, cfg, test_logger)
 
@@ -26,4 +26,4 @@ def test_pending_to_processing_to_done(conn, factory, db_dsn) -> None:
 def test_idle_when_no_jobs(conn, factory, db_dsn) -> None:
     # An episode with no job → nothing claimable → IDLE (and no job touched).
     factory.episode()
-    assert run_once(conn, make_config(db_dsn), test_logger) is Tick.IDLE
+    assert run_once(conn, make_config(db_dsn.value), test_logger) is Tick.IDLE

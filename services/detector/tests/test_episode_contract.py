@@ -16,6 +16,7 @@ import pytest
 from psycopg.types.json import Jsonb
 
 from detector import repository
+from detector.models import DetectorType, FindingDraft, Severity
 
 _SEEDED_AT = datetime(2026, 1, 1, 0, 0, 0)
 
@@ -59,3 +60,31 @@ def test_load_episode_surfaces_evidence_links(conn, linked_episode) -> None:
     assert link.claim_version_id is None
     # Redacting __repr__ must not leak the free-text note.
     assert "contradicts" not in repr(link)
+
+
+def test_insert_findings_writes_rows(conn, factory) -> None:
+    # Exercise the write path with a non-empty draft list (the stub always returns [], so this is otherwise
+    # unexercised): Jsonb wrapping of reasons/evidenceRefs, the uuid id, and the evidenceRefs array CHECK.
+    episode_id = factory.episode()
+    draft = FindingDraft(
+        detector=DetectorType.CLONING,
+        score=0.75,
+        severity=Severity.MEDIUM,
+        reasons={"rule": "exact-content-match"},
+        evidence_refs=["ev-1", "ev-2"],
+    )
+    with conn.transaction():
+        repository.insert_findings(conn, episode_id, [draft])
+
+    row = conn.execute(
+        'SELECT "detector", "score", "severity", "reasons", jsonb_typeof("evidenceRefs") AS refs_type '
+        'FROM "Finding" WHERE "episodeId" = %s',
+        (episode_id,),
+    ).fetchone()
+    assert row is not None
+    assert row["detector"] == "CLONING"
+    assert abs(row["score"] - 0.75) < 1e-9
+    assert row["severity"] == "MEDIUM"
+    assert row["reasons"] == {"rule": "exact-content-match"}
+    assert row["refs_type"] == "array"  # DB CHECK jsonb_typeof = 'array'
+    # Factory teardown deletes Finding rows by episodeId (tilik_app has DELETE on Finding).

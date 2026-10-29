@@ -19,7 +19,7 @@ def _raise_permanent(_episode):
 def test_retryable_requeues_then_fails_at_max(conn, factory, db_dsn) -> None:
     episode_id = factory.episode()
     job_id = factory.job(episode_id)
-    cfg = make_config(db_dsn, max_attempts=3)
+    cfg = make_config(db_dsn.value, max_attempts=3)
 
     # attempts 0 -> 1 (requeue), 1 -> 2 (requeue): status returns to PENDING, lock cleared.
     for expected_attempts in (1, 2):
@@ -42,7 +42,7 @@ def test_non_retryable_fails_immediately(conn, factory, db_dsn) -> None:
     episode_id = factory.episode()
     job_id = factory.job(episode_id)
 
-    tick = run_once(conn, make_config(db_dsn), test_logger, detect=_raise_permanent)
+    tick = run_once(conn, make_config(db_dsn.value), test_logger, detect=_raise_permanent)
 
     assert tick is Tick.PROGRESSED
     row = factory.status(job_id)
@@ -54,7 +54,7 @@ def test_episode_not_found_fails_without_retry(conn, factory, db_dsn) -> None:
     # Job whose payload points at an episode that does not exist → non-retryable → FAILED immediately.
     job_id = factory.job("ep-does-not-exist-" + "0" * 8)
 
-    tick = run_once(conn, make_config(db_dsn), test_logger)
+    tick = run_once(conn, make_config(db_dsn.value), test_logger)
 
     assert tick is Tick.PROGRESSED
     row = factory.status(job_id)
