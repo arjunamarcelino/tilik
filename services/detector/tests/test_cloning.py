@@ -8,13 +8,18 @@ NaN/degenerate-corpus edges; a threshold-gap test pins the empirical justificati
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
+from pathlib import Path
 
 from _bundle import clone_corpus, load_episodes, load_labels, require_bundle
 
+from detector import cloning as cloning_mod
 from detector.cloning import detect_cloning, strip_boilerplate
 from detector.config import CLONING_MIN_CORPUS, Config
 from detector.models import CloneDoc, DetectorType, Episode, EvidenceView, Severity
+
+_NARRATIVE_CONTRACT = Path(__file__).resolve().parents[3] / "test-vectors" / "narrative-format.json"
 
 
 def _cfg(**kwargs) -> Config:
@@ -145,6 +150,15 @@ def test_clone_fires_at_the_minimum_working_corpus() -> None:
 
 
 # --- strip_boilerplate --------------------------------------------------------------------------
+
+
+def test_strip_prefixes_match_the_shared_generator_contract() -> None:
+    # The prefixes strip_boilerplate keys on are a contract with data/synthetic, pinned in a shared vector and
+    # asserted from both sides. If the generator's narrative format changes, that side's test fails; if the
+    # detector's constants drift from the vector, this one does.
+    contract = json.loads(_NARRATIVE_CONTRACT.read_text(encoding="utf-8"))
+    assert cloning_mod._DISCLAIMER_PREFIX == contract["disclaimerPrefix"]
+    assert cloning_mod._IDENTITY_PREFIX == contract["identityPrefix"]
 
 
 def test_strip_boilerplate_removes_disclaimer_and_identity_keeps_clinical() -> None:
