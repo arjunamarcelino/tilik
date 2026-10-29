@@ -1,0 +1,24 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tilik-detector"
+version = "0.1.0"
+description = "Tilik detector worker — polls the Postgres outbox and (Prompts 08–09) runs fraud detectors. Synthetic data only."
+requires-python = ">=3.11"
+# Exact pins (not ~=/>=): the worker is a reliability component and a non-NestJS consumer of the shared
+# schema; pin the driver and test runner so behaviour is reproducible. scikit-learn is deliberately absent
+# — detectors land in Prompts 08–09. psycopg[binary] bundles libpq for dev; Prompt 14 containerisation
+# should switch to psycopg[c]/system libpq (maintainers discourage [binary] in production).
+dependencies = ["psycopg[binary]==3.3.6"]
+
+[project.optional-dependencies]
+dev = ["pytest==9.2.0"]
+
+[project.scripts]
+# Convenience alias; `python -m detector.worker` is the canonical entrypoint (used by README + the migration).
+tilik-detector = "detector.worker:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["detector"]
