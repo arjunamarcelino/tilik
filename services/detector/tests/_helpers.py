@@ -1,4 +1,4 @@
-"""Small helpers shared by the DB integration tests."""
+"""Small helpers shared by the detector tests."""
 
 from __future__ import annotations
 
@@ -19,3 +19,16 @@ def make_config(dsn: str, *, max_attempts: int = 5) -> Config:
         log_level="info",
         worker_id="test-" + uuid.uuid4().hex[:8],
     )
+
+
+def detector_config(**overrides) -> Config:
+    """A minimal Config for the pure detector tests (the DSN is never connected). Hoisted here so the two
+    detector test modules share one definition instead of drifting copies."""
+    base = dict(
+        app_database_url="unused",
+        poll_interval_s=0.01,
+        max_attempts=5,
+        log_level="info",
+        worker_id="test",
+    )
+    return Config(**{**base, **overrides})

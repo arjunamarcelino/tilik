@@ -13,20 +13,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from _bundle import clone_corpus, load_episodes, load_labels, require_bundle
+from _helpers import detector_config as _cfg
 
 from detector import cloning as cloning_mod
 from detector.cloning import detect_cloning, strip_boilerplate
-from detector.config import CLONING_MIN_CORPUS, Config
+from detector.config import CLONING_MIN_CORPUS
 from detector.models import CloneDoc, DetectorType, Episode, EvidenceView, Severity
 
 _NARRATIVE_CONTRACT = Path(__file__).resolve().parents[3] / "test-vectors" / "narrative-format.json"
-
-
-def _cfg(**kwargs) -> Config:
-    return Config(
-        app_database_url="unused", poll_interval_s=0.01, max_attempts=5, log_level="info",
-        worker_id="test", **kwargs,
-    )
 
 
 def _record(narrative: str, *, ev_id="ev-1") -> EvidenceView:
@@ -44,7 +38,7 @@ def _episode(records) -> Episode:
     )
 
 
-def _medical_refs(episodes, labels) -> set[str]:
+def _medical_refs(episodes) -> set[str]:
     return {ref for ref in episodes if any(e.kind == "MEDICAL_RECORD" for e in episodes[ref].evidence)}
 
 
@@ -57,7 +51,7 @@ def test_flags_exactly_the_planted_clone_cluster() -> None:
     cfg = _cfg()
 
     flagged = set()
-    for ref in _medical_refs(episodes, labels):
+    for ref in _medical_refs(episodes):
         if detect_cloning(episodes[ref], clone_corpus(episodes, ref), cfg):
             flagged.add(ref)
     expected = {ref for ref, lbl in labels.items() if lbl.get("category") == "fraud_cloning"}

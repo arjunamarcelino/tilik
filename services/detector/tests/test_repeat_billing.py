@@ -12,17 +12,10 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from _bundle import load_episodes, load_labels, require_bundle
+from _helpers import detector_config as _cfg
 
-from detector.config import Config
 from detector.models import ClaimLineView, ClaimVersionView, DetectorType, Episode, EvidenceLinkView, Severity
 from detector.repeat_billing import detect_repeat_billing
-
-
-def _cfg(**kwargs) -> Config:
-    return Config(
-        app_database_url="unused", poll_interval_s=0.01, max_attempts=5, log_level="info",
-        worker_id="test", **kwargs,
-    )
 
 
 def _claim(claim_no, codes, *, day=1, version=1, status="ACTIVE", is_current=True, cid=None) -> ClaimVersionView:
