@@ -81,10 +81,11 @@ def episode_has_comparable_record(episode: Episode) -> bool:
 
 def detect_cloning(episode: Episode, corpus: Sequence[CloneDoc], cfg: Config) -> list[FindingDraft]:
     """Return at most one CLONING finding for this episode (listing all matched evidence)."""
-    record = _current_record(episode)
-    if record is None:
+    found = _current_record(episode)
+    if found is None:
         return []  # no medical-record narrative to compare
-    current_text = strip_boilerplate(record.payload["narrative"])
+    record, narrative = found
+    current_text = strip_boilerplate(narrative)
     if not current_text.strip():
         return []  # narrative was all boilerplate
     if len(corpus) < CLONING_MIN_CORPUS:
@@ -187,16 +188,16 @@ def _longest_shared_span_words(a: str, b: str) -> int:
     return block.size
 
 
-def _current_record(episode: Episode) -> EvidenceView | None:
-    """The episode's representative medical record (lowest evidence id among those with a narrative).
-
-    Episodes carry one MEDICAL_RECORD in the synthetic data; if several ever appear, the lowest-id one is the
-    deterministic representative (a stable choice beats concatenation for an explainable per-record match)."""
-    records = sorted(
-        (e for e in episode.evidence if e.kind == _MEDICAL_RECORD and _narrative_of(e)),
-        key=lambda e: e.id,
-    )
-    return records[0] if records else None
+def _current_record(episode: Episode) -> tuple[EvidenceView, str] | None:
+    """The episode's representative medical record and its narrative (lowest evidence id among those with a
+    narrative). Returns the text alongside the record so callers never re-subscript ``payload`` (typed
+    ``dict | None``). Episodes carry one MEDICAL_RECORD in the synthetic data; if several ever appear, the
+    lowest-id one is the deterministic representative (a stable choice beats concatenation)."""
+    for evidence in sorted((e for e in episode.evidence if e.kind == _MEDICAL_RECORD), key=lambda e: e.id):
+        narrative = _narrative_of(evidence)
+        if narrative is not None:
+            return evidence, narrative
+    return None
 
 
 def _narrative_of(evidence: EvidenceView) -> str | None:
