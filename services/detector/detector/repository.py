@@ -23,6 +23,7 @@ from .models import (
     ClaimLineView,
     ClaimVersionView,
     Episode,
+    EvidenceLinkView,
     EvidenceView,
     FindingDraft,
 )
@@ -68,7 +69,7 @@ def claim_job(conn: psycopg.Connection, worker_id: str) -> dict[str, Any] | None
     return conn.execute(_CLAIM_SQL, {"type": DETECT_EPISODE, "worker": worker_id}).fetchone()
 
 
-# --- Load episode (constant 3–4 queries; no N+1) ------------------------------------------------
+# --- Load episode (constant 5 queries; no N+1) --------------------------------------------------
 
 
 def load_episode(conn: psycopg.Connection, episode_id: str) -> Episode | None:
@@ -79,6 +80,9 @@ def load_episode(conn: psycopg.Connection, episode_id: str) -> Episode | None:
     reads can't show the detector a claim set and a line set from different instants, which would make a
     retried job observe a different input (colliding with the deterministic-detector contract). The reads
     take no row locks and the tx commits immediately, so detect()/the write tx still run lock-free after.
+
+    Loads in a constant 5 queries (episode, claim versions, all lines joined, evidence, claim↔evidence
+    links) regardless of row counts — never per-claim.
     """
     with conn.transaction():
         conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
@@ -121,6 +125,18 @@ def load_episode(conn: psycopg.Connection, episode_id: str) -> Episode | None:
             {"id": episode_id},
         ).fetchall()
 
+        # Claim↔evidence links for this episode (one query, joined via the evidence's episode).
+        link_rows = conn.execute(
+            """
+            SELECT el."evidenceId", el."claimVersionId", el."relation", el."note"
+            FROM "EvidenceLink" el
+            JOIN "EvidenceRecord" ev ON el."evidenceId" = ev."id"
+            WHERE ev."episodeId" = %(id)s
+            ORDER BY el."id"
+            """,
+            {"id": episode_id},
+        ).fetchall()
+
     lines_by_claim: dict[str, list[ClaimLineView]] = {}
     for r in line_rows:
         lines_by_claim.setdefault(r["claimVersionId"], []).append(
@@ -146,10 +162,17 @@ def load_episode(conn: psycopg.Connection, episode_id: str) -> Episode | None:
         )
         for e in evidence_rows
     ]
+    links = [
+        EvidenceLinkView(
+            evidence_id=link["evidenceId"], claim_version_id=link["claimVersionId"],
+            relation=link["relation"], note=link["note"],
+        )
+        for link in link_rows
+    ]
     return Episode(
         id=ep["id"], patient_token=ep["patientToken"], facility_id=ep["facilityId"],
         started_at=_utc(ep["startedAt"]), ended_at=_utc(ep["endedAt"]),
-        import_batch_id=ep["importBatchId"], claims=claims, evidence=evidence,
+        import_batch_id=ep["importBatchId"], claims=claims, evidence=evidence, links=links,
     )
 
 

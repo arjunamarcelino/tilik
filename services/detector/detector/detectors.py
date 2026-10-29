@@ -17,5 +17,9 @@ from .models import Episode, FindingDraft
 
 
 def run_detectors(episode: Episode) -> list[FindingDraft]:
-    """Return findings for an episode. Stub: no detection logic yet (Prompts 08–09)."""
+    """Return findings for an episode. Stub: no detection logic yet (Prompts 08–09).
+
+    The ``episode`` carries all claim versions (+lines), evidence, and the claim↔evidence ``links``
+    (``relation`` ∈ mendukung/bertentangan/sumber) — the last being the primary PERTENTANGAN_BUKTI signal.
+    """
     return []

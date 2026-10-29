@@ -84,6 +84,23 @@ class EvidenceView:
 
 
 @dataclass(frozen=True)
+class EvidenceLinkView:
+    """A claim↔evidence relationship. ``relation='bertentangan'`` (contradicting) is the primary signal for
+    the PERTENTANGAN_BUKTI detector; 'mendukung' (supporting) / 'sumber' (source) are the other values."""
+
+    evidence_id: str
+    claim_version_id: str | None  # nullable — a link can attach to the episode without a specific claim
+    relation: str  # 'mendukung' | 'bertentangan' | 'sumber'
+    note: str | None
+
+    def __repr__(self) -> str:  # omit free-text note
+        return (
+            f"EvidenceLinkView(evidence_id={self.evidence_id!r}, "
+            f"claim_version_id={self.claim_version_id!r}, relation={self.relation!r})"
+        )
+
+
+@dataclass(frozen=True)
 class Episode:
     id: str
     patient_token: str
@@ -94,11 +111,13 @@ class Episode:
     # ALL versions (history matters for repeat-billing / cloning), not just the current one.
     claims: list[ClaimVersionView] = field(default_factory=list)
     evidence: list[EvidenceView] = field(default_factory=list)
+    # Claim↔evidence links (relation = mendukung/bertentangan/sumber) — the PERTENTANGAN_BUKTI signal.
+    links: list[EvidenceLinkView] = field(default_factory=list)
 
     def __repr__(self) -> str:  # never dump patient_token / facility_id / clinical content
         return (
             f"Episode(id={self.id!r}, patient={_mask_token(self.patient_token)}, "
-            f"claims={len(self.claims)}, evidence={len(self.evidence)})"
+            f"claims={len(self.claims)}, evidence={len(self.evidence)}, links={len(self.links)})"
         )
 
 
