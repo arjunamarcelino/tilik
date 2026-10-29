@@ -102,6 +102,14 @@ class Config:
         max_attempts = _parse_int(env, "DETECTOR_MAX_ATTEMPTS", 5, minimum=1)
         log_level = _parse_log_level(env)
 
+        cloning_threshold = _parse_float(
+            env, "DETECTOR_CLONING_THRESHOLD", _DEFAULT_CLONING_THRESHOLD, lo=0.0, hi=1.0
+        )
+        if cloning_threshold == 0.0:
+            raise ConfigError(
+                "FATAL: DETECTOR_CLONING_THRESHOLD must be > 0 — a 0 cosine threshold flags every pair."
+            )
+
         return cls(
             app_database_url=dsn,
             poll_interval_s=poll_ms / 1000.0,
@@ -111,9 +119,7 @@ class Config:
             repeat_exception_codes=_parse_code_set(
                 env, "DETECTOR_REPEAT_EXCEPTION_CODES", _DEFAULT_REPEAT_EXCEPTION_CODES
             ),
-            cloning_threshold=_parse_float(
-                env, "DETECTOR_CLONING_THRESHOLD", _DEFAULT_CLONING_THRESHOLD, lo=0.0, hi=1.0
-            ),
+            cloning_threshold=cloning_threshold,
         )
 
     def __repr__(self) -> str:  # never render the DSN password
