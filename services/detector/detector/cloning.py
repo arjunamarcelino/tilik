@@ -8,15 +8,10 @@ Method (explainable + deterministic, not a black box):
   * strip the two deterministic boilerplate lines (the ``[Data sintetis …]`` disclaimer — identical in every
     narrative — and the ``Nama: … | No. RM: …`` identity line, which is the ONE part a clone changes and so
     must be removed or it would dilute a true clone's score). Clinical sentences are NOT regex-scrubbed.
-  * TF-IDF over **word 1–3-grams** of {current + corpus}, **dropping terms common across the corpus**
-    (``CLONING_MAX_DF``), then cosine of the current doc against each corpus doc. The ``max_df`` filter is
-    the load-bearing part, not cosmetic: a standardized SOAP form shares only STRUCTURE, but its low content
-    cardinality makes some forms byte-identical across patients — and a plain cosine scores identical vectors
-    1.0 regardless of idf (idf cancels in the ratio), so it would over-flag legitimate templates. Filtering
-    corpus-common terms leaves only distinctive CONTENT: a real clone (a rare, copied clinical story) stays
-    ≈1.0, while a shared template collapses toward 0. This is the README's "content vs structure" split, and
-    it is corpus-relative (a fraction), so it holds as the corpus grows. Char n-grams are the wrong tool here
-    (shared scaffold inflates char overlap).
+  * TF-IDF over **word 1–3-grams** of {current + corpus}, dropping terms common across the corpus
+    (``CLONING_MAX_DF`` — see ``config.py`` for why this filter, not idf, is what separates copied CONTENT
+    from shared STRUCTURE), then cosine of the current doc against each corpus doc. Char n-grams are the
+    wrong tool here (shared scaffold inflates char overlap).
   * flag corpus docs with cosine ≥ ``cfg.cloning_threshold`` (default 0.85). After the ``max_df`` filter,
     clones sit at ≈1.0 and every template/clean narrative at ≈0.0 (verified against the Prompt 04 manifest),
     so 0.85 separates them with wide margin.
@@ -27,6 +22,12 @@ The corpus is read in its own snapshot, so after new imports idf shifts and the 
 Finding *identity* (the dedupe key) is anchored on the source record id, NOT the matched set — so it is
 corpus-invariant: a re-detect after the corpus grew still conflicts onto the first row, and ON CONFLICT
 freezes its first-written score/matched set. (The matched evidence lives in ``reasons``, as payload.)
+
+Known limitation: detection is per-episode against the corpus as it exists when the job runs. Within one
+import (all siblings commit together) the signal is symmetric; but a clone pair split across two imports is
+not re-detected, so the earlier-imported episode — detected before its sibling existed — goes unflagged and
+only the later one fires. Fine for the single-bundle demo; a future "re-enqueue affected episodes on import"
+or a batch cross-check would close it.
 """
 
 from __future__ import annotations
@@ -48,12 +49,7 @@ _VECTORIZER_KWARGS = dict(
     lowercase=True,
     token_pattern=r"(?u)\b\w\w+\b",  # explicit: a future sklearn default change can't silently drift tokens
     min_df=1,  # keep singletons — distinctive clinical content is what a clone shares
-    # Drop corpus-common terms (CLONING_MAX_DF). Critical, not cosmetic: a standardized SOAP form shares only
-    # STRUCTURE, but low content-cardinality makes some of those forms byte-identical across patients — and a
-    # plain cosine scores identical vectors 1.0 no matter their idf, so it would flag legitimate templates.
-    # Filtering terms common across the corpus leaves only distinctive CONTENT, so a real clone (rare, copied
-    # story) stays ≈1.0 while a shared template collapses toward 0. This is the "content vs structure" split.
-    max_df=CLONING_MAX_DF,
+    max_df=CLONING_MAX_DF,  # drop corpus-common terms (the content-vs-structure separator; rationale in config.py)
     sublinear_tf=True,
     norm="l2",  # cosine == dot product; neutralizes length (e.g. stripped vs unstripped)
     use_idf=True,

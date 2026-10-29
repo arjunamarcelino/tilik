@@ -38,13 +38,17 @@ CLONING_HIGH_CUTOFF = 0.95  # cosine at/above which a CLONING finding is HIGH se
 # NO clone can ever be detected. So the floor is 13, not an arbitrary small number; larger clusters need
 # proportionally more corpus (k <= max_df * N). Below the floor, detect_cloning returns [] (fail-safe).
 CLONING_MIN_CORPUS = 13
-# Drop terms appearing in MORE than this fraction of the corpus before comparing. This is what separates
-# "copied distinctive content" (flagged) from "shared standardized structure" (not) — and is corpus-relative
+# Drop terms appearing in MORE than this fraction of the corpus before comparing. This — NOT idf — is what
+# separates "copied distinctive content" (flagged) from "shared standardized structure" (not): a plain cosine
+# scores two identical SOAP forms 1.0 regardless of idf (idf cancels in the ratio), so exact-duplicate
+# templates would over-flag; filtering corpus-common terms leaves only distinctive content. Corpus-relative
 # (a fraction), so it holds as the corpus grows. Verified against the Prompt 04 manifest: a fraud clone's
 # distinctive clinical terms sit in ~9% of narratives (survive) while a SOAP template's scaffold AND its
-# low-cardinality complaint/vitals text are corpus-common (filtered) — so exact-duplicate SOAP forms, which
-# a plain cosine scores 1.0 (identical vectors, idf cancels), drop to ~0 and stop over-flagging clean/
-# exception episodes. See docs/solutions for the empirical separation.
+# low-cardinality complaint/vitals text are corpus-common (filtered) → clones ≈1.0, templates/clean ≈0.
+# This is the single most behaviourally load-bearing knob, yet it is a module constant, not env-tunable: the
+# config surface is kept deliberately minimal (only the two values a demo operator would actually retune are
+# env — the threshold and the exception set), and changing max_df is a code change gated by a regression test
+# (tests/test_cloning.py::test_clone_fires_at_the_minimum_working_corpus), not a runtime dial.
 CLONING_MAX_DF = 0.15
 
 
