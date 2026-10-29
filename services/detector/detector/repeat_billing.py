@@ -39,7 +39,9 @@ def detect_repeat_billing(episode: Episode, cfg: Config) -> list[FindingDraft]:
     # listed twice on ONE claim counts once (one billing), and distinct claims collide into a count >= 2.
     by_code_day: dict[str, dict[str, dict[str, str]]] = {}
     for claim in representatives:
-        day = claim.submitted_at.date().isoformat() if claim.submitted_at else "unknown"
+        # submittedAt is NOT NULL in the schema (ClaimVersion.submittedAt: DateTime), so there is no dateless
+        # bucket to accidentally co-group distinct claims into — the "same calendar day" key is always real.
+        day = claim.submitted_at.date().isoformat()
         procedure_codes = {ln.code for ln in claim.lines if ln.type == "PROCEDURE"}
         for code in procedure_codes:
             if code in cfg.repeat_exception_codes:
