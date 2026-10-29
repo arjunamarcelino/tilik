@@ -14,7 +14,9 @@ from __future__ import annotations
 import os
 import socket
 import uuid
+import logging
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 
 class ConfigError(SystemExit):
@@ -22,13 +24,25 @@ class ConfigError(SystemExit):
 
 
 def _redact_dsn(dsn: str) -> str:
-    """Mask the password in a ``postgresql://user:pass@host/db`` DSN for safe logging."""
-    if "@" not in dsn or "://" not in dsn:
+    """Mask the password in a ``postgresql://user:pass@host/db`` DSN for safe logging.
+
+    Parses via ``urlsplit`` and drops the query string entirely (so a ``?password=`` can't leak), rebuilding
+    only scheme/user/host/port/path. Assumes an RFC-compliant DSN where any ``@``/``:`` in the password is
+    percent-encoded (the valid-URL contract libpq itself requires); on an unparseable value it returns a
+    bare ``"<dsn>"``. Defence-in-depth — the DSN is not logged anywhere today.
+    """
+    try:
+        parts = urlsplit(dsn)
+    except ValueError:
         return "<dsn>"
-    scheme, rest = dsn.split("://", 1)
-    creds, tail = rest.split("@", 1)
-    user = creds.split(":", 1)[0] if ":" in creds else creds
-    return f"{scheme}://{user}:***@{tail}"
+    if not parts.hostname:
+        return "<dsn>"
+    userinfo = parts.username or ""
+    if parts.password:
+        userinfo = f"{userinfo}:***"
+    hostport = parts.hostname + (f":{parts.port}" if parts.port else "")
+    prefix = f"{userinfo}@" if userinfo else ""
+    return f"{parts.scheme}://{prefix}{hostport}{parts.path}"
 
 
 def _default_worker_id() -> str:
@@ -58,12 +72,13 @@ class Config:
 
         poll_ms = _parse_int(env, "DETECTOR_POLL_INTERVAL_MS", 1000, minimum=1)
         max_attempts = _parse_int(env, "DETECTOR_MAX_ATTEMPTS", 5, minimum=1)
+        log_level = _parse_log_level(env)
 
         return cls(
             app_database_url=dsn,
             poll_interval_s=poll_ms / 1000.0,
             max_attempts=max_attempts,
-            log_level=env.get("LOG_LEVEL", "info").strip().lower() or "info",
+            log_level=log_level,
             worker_id=env.get("DETECTOR_WORKER_ID", "").strip() or _default_worker_id(),
         )
 
@@ -86,3 +101,13 @@ def _parse_int(env: dict[str, str], key: str, default: int, *, minimum: int) -> 
     if value < minimum:
         raise ConfigError(f"FATAL: {key} must be >= {minimum}, got {value}.")
     return value
+
+
+def _parse_log_level(env: dict[str, str]) -> str:
+    """Validate LOG_LEVEL at config time so a bad value fails fast as ConfigError, not a late ValueError
+    out of ``logging.setLevel``."""
+    raw = env.get("LOG_LEVEL", "info").strip().lower() or "info"
+    valid = {name.lower() for name in logging.getLevelNamesMapping()}  # 3.11+
+    if raw not in valid:
+        raise ConfigError(f"FATAL: LOG_LEVEL must be one of {sorted(valid)}, got {raw!r}.")
+    return raw

@@ -38,9 +38,12 @@ class NotAppRoleError(RuntimeError):
 def normalize_dsn(dsn: str) -> tuple[str, str]:
     """Return (libpq-safe DSN, options) from a Prisma-style URL.
 
-    Prisma DSNs carry ``?schema=public``, which libpq/psycopg reject. Strip it and translate it to a
-    ``search_path`` in the session ``options`` (merged with the statement/lock timeouts). The owner and app
-    both use the ``public`` schema, so this keeps the detector reading the same tables Prisma created.
+    Handles the ONE Prisma-only query param this repo's ``APP_DATABASE_URL`` carries — ``schema`` — which
+    libpq/psycopg reject: it is stripped and translated to a ``search_path`` in the session ``options``
+    (merged with the statement/lock timeouts). Other Prisma-only params (``connection_limit``,
+    ``pool_timeout``, ``pgbouncer``) are NOT handled and would still reach libpq; add them here if a future
+    DSN carries them. The owner and app both use the ``public`` schema, so this keeps the detector reading
+    the same tables Prisma created.
     """
     parts = urlsplit(dsn)
     query = parse_qsl(parts.query, keep_blank_values=True)
