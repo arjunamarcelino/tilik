@@ -30,6 +30,7 @@ def test_sql_constants_are_placeholder_only() -> None:
     # (the one sanctioned f-string composes the static _FENCE fragment, which contains placeholders only).
     sql_constants = {
         "_CLAIM_SQL": repository._CLAIM_SQL,
+        "_CLONE_CORPUS_SQL": repository._CLONE_CORPUS_SQL,
         "_MARK_DONE_SQL": repository._MARK_DONE_SQL,
         "_REQUEUE_SQL": repository._REQUEUE_SQL,
         "_FAIL_SQL": repository._FAIL_SQL,

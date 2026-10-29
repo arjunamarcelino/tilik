@@ -8,10 +8,25 @@ version = "0.1.0"
 description = "Tilik detector worker — polls the Postgres outbox and (Prompts 08–09) runs fraud detectors. Synthetic data only."
 requires-python = ">=3.11"
 # Exact pins (not ~=/>=): the worker is a reliability component and a non-NestJS consumer of the shared
-# schema; pin the driver and test runner so behaviour is reproducible. scikit-learn is deliberately absent
-# — detectors land in Prompts 08–09. psycopg[binary] bundles libpq for dev; Prompt 14 containerisation
-# should switch to psycopg[c]/system libpq (maintainers discourage [binary] in production).
-dependencies = ["psycopg[binary]==3.3.6"]
+# schema; pin the driver and test runner so behaviour is reproducible. psycopg[binary] bundles libpq for
+# dev; Prompt 14 containerisation should switch to psycopg[c]/system libpq (maintainers discourage [binary]
+# in production).
+#
+# scikit-learn (Prompt 08) powers the CLONING detector's TF-IDF cosine. Determinism rests on a pinned
+# version: TfidfVectorizer sorts its vocabulary (order-independent) and cosine_similarity stays on the
+# sparse path (no multithreaded BLAS) — so a fixed corpus → bit-identical scores. The full transitive
+# closure is pinned (not just scikit-learn) so the resolved numpy/scipy/BLAS can't drift under us.
+# NOTE for Prompt 14 Docker: scikit-learn + numpy + scipy ≈ 100–150 MB of wheels — the heaviest image add.
+dependencies = [
+    "psycopg[binary]==3.3.6",
+    "scikit-learn==1.9.1",
+    "numpy==2.5.4",
+    "scipy==1.18.1",
+    "joblib==1.6.0",
+    "threadpoolctl==3.7.0",
+    "narwhals==2.28.0",
+    "cloudpickle==3.1.2",
+]
 
 [project.optional-dependencies]
 dev = ["pytest==9.2.0"]

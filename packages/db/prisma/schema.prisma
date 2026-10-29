@@ -208,9 +208,11 @@ model Finding {
   severity       Severity
   reasons        Json
   evidenceRefs   Json // array of EvidenceRecord ids (soft refs; a join table lands in a later prompt). init migration: CHECK jsonb_typeof = 'array'
+  dedupeKey      String // deterministic per-finding key (sha256 hex) — makes re-insert idempotent (worker re-run / reaper requeue). NOT a natural key the UI reads.
   case           Case?         @relation(fields: [caseId], references: [id], onDelete: SetNull)
   caseId         String?
 
+  @@unique([episodeId, detector, dedupeKey]) // one row per (episode, detector, finding identity); ON CONFLICT DO NOTHING on re-detect
   @@index([episodeId])
   @@index([claimVersionId])
   @@index([caseId])

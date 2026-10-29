@@ -17,6 +17,10 @@ from __future__ import annotations
 
 from .gen import Gen
 
+# CONSUMED CONTRACT: every narrative's first two lines are the disclaimer and a "Nama: … | No. RM: …"
+# identity line. services/detector's cloning.strip_boilerplate strips exactly those before TF-IDF, keying on
+# the prefixes pinned in test-vectors/narrative-format.json (asserted from both sides). Changing these line
+# prefixes silently degrades the CLONING detector — update the vector and both tests if you do.
 _DISCLAIMER = "[Data sintetis — nama fiktif, bukan pasien nyata.]"
 
 # A single, fixed clinical story. Clones substitute only {name}/{mrn}; all clinical sentences are identical.

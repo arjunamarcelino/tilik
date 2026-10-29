@@ -63,8 +63,8 @@ def test_load_episode_surfaces_evidence_links(conn, linked_episode) -> None:
 
 
 def test_insert_findings_writes_rows(conn, factory) -> None:
-    # Exercise the write path with a non-empty draft list (the stub always returns [], so this is otherwise
-    # unexercised): Jsonb wrapping of reasons/evidenceRefs, the uuid id, and the evidenceRefs array CHECK.
+    # Exercise the write path with a non-empty draft list: Jsonb wrapping of reasons/evidenceRefs, the uuid
+    # id, and the evidenceRefs array CHECK.
     episode_id = factory.episode()
     draft = FindingDraft(
         detector=DetectorType.CLONING,
@@ -72,13 +72,14 @@ def test_insert_findings_writes_rows(conn, factory) -> None:
         severity=Severity.MEDIUM,
         reasons={"rule": "exact-content-match"},
         evidence_refs=["ev-1", "ev-2"],
+        dedupe_key="dedupe-contract-test",
     )
     with conn.transaction():
         repository.insert_findings(conn, episode_id, [draft])
 
     row = conn.execute(
-        'SELECT "detector", "score", "severity", "reasons", jsonb_typeof("evidenceRefs") AS refs_type '
-        'FROM "Finding" WHERE "episodeId" = %s',
+        'SELECT "detector", "score", "severity", "reasons", "dedupeKey", '
+        'jsonb_typeof("evidenceRefs") AS refs_type FROM "Finding" WHERE "episodeId" = %s',
         (episode_id,),
     ).fetchone()
     assert row is not None
@@ -86,5 +87,29 @@ def test_insert_findings_writes_rows(conn, factory) -> None:
     assert abs(row["score"] - 0.75) < 1e-9
     assert row["severity"] == "MEDIUM"
     assert row["reasons"] == {"rule": "exact-content-match"}
+    assert row["dedupeKey"] == "dedupe-contract-test"
     assert row["refs_type"] == "array"  # DB CHECK jsonb_typeof = 'array'
     # Factory teardown deletes Finding rows by episodeId (tilik_app has DELETE on Finding).
+
+
+def test_insert_findings_is_idempotent(conn, factory) -> None:
+    # Re-inserting the SAME (episodeId, detector, dedupeKey) must conflict-skip, not duplicate and not raise —
+    # the ON CONFLICT DO NOTHING guard a worker re-run / reaper requeue relies on.
+    episode_id = factory.episode()
+    draft = FindingDraft(
+        detector=DetectorType.REPEAT_BILLING,
+        score=1.0,
+        severity=Severity.HIGH,
+        reasons={"messages": ["dup"]},
+        evidence_refs=[],
+        dedupe_key="dedupe-idem",
+    )
+    with conn.transaction():
+        repository.insert_findings(conn, episode_id, [draft])
+    with conn.transaction():  # second insert: a conflict-skip (rowcount 0) must NOT raise
+        repository.insert_findings(conn, episode_id, [draft])
+
+    count = conn.execute(
+        'SELECT count(*) AS n FROM "Finding" WHERE "episodeId"=%s', (episode_id,)
+    ).fetchone()["n"]
+    assert count == 1

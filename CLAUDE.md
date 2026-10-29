@@ -16,7 +16,7 @@ apps/api                      NestJS API (TS)    (Prompt 05 — auth/RBAC/audit 
 apps/web                      Next.js web (TS)   (Prompt 10+)
 packages/shared               shared TS enums/types
 packages/db (@tilik/db)       Prisma schema, migrations, typed client
-services/detector             Python worker      (Prompt 07 — outbox poller + tokenizer; 08+ detectors) — NOT a workspace package
+services/detector             Python worker      (Prompt 07 — outbox poller + tokenizer; 08 — repeat-billing + cloning detectors) — NOT a workspace package
 data/synthetic                data generator     (Prompt 04)    — NOT a workspace package
 infra                         Docker Compose + Caddy + env       — NOT a workspace package
 docs                          plans / reviews / solutions        — gitignored (local knowledge)
@@ -87,14 +87,16 @@ test:vectors`). **The whole batch is ONE `$transaction`** — staging + every ep
 - **Detector worker (`services/detector`, Python, Prompt 07) — the outbox consumer.** Python (not a pnpm
   workspace; mirrors `data/synthetic`'s layout — hatchling, exact-pinned deps, per-dir `.venv`, pytest). It
   **consumes** the `DETECT_EPISODE` outbox the import pipeline fills: poll → claim → load episode →
-  `run_detectors()` (a **no-op stub** until Prompts 08–09) → write `Finding`s + mark `DONE`. DB access is raw
+  `run_detectors(episode, corpus, cfg)` (Prompt 08: REPEAT_BILLING + CLONING; PERTENTANGAN_BUKTI is 09) →
+  write `Finding`s + mark `DONE`. DB access is raw
   **psycopg3** as the **non-owner `tilik_app`** via `APP_DATABASE_URL` (ESLint has no reach here, so a pytest
   **source guard** forbids a bare `DATABASE_URL` key + asserts placeholder-only SQL); it asserts
   `current_user='tilik_app'` at boot/after every reconnect and **never runs migrations**. The claim is ONE
   atomic `UPDATE … (SELECT … FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING` (**claim-then-release**); every
   terminal/requeue UPDATE is **lease-fenced** (`WHERE id=… AND status='PROCESSING' AND lockedBy=worker`) and
-  aborts the tx on `rowcount=0`, so the Prompt 08 stale-lock reaper can't cause a double-insert (findings
-  have no natural key). `load_episode` reads under one **REPEATABLE READ** snapshot (deterministic detector
+  aborts the tx on `rowcount=0`, so the stale-lock reaper can't cause a double-insert (backstopped now by
+  `Finding.dedupeKey` + `@@unique` + `ON CONFLICT DO NOTHING` — see Prompt 08 below). `load_episode` reads
+  under one **REPEATABLE READ** snapshot (deterministic detector
   input); the `Episode` contract carries all claim versions (+lines), evidence, and **`EvidenceLink`s**
   (`relation='bertentangan'` is the PERTENTANGAN_BUKTI signal). Gotchas: the Prisma `?schema=` DSN param must
   be normalized (libpq rejects it); Prisma `DateTime` columns are **naive** → coerce UTC at the repo
@@ -102,8 +104,31 @@ test:vectors`). **The whole batch is ONE `$transaction`** — staging + every ep
   `test-vectors/tokenization.vectors.json` (tokenizer) and `test-vectors/outbox-contract.json` (job type);
   assert both sides with `pnpm --filter @tilik/api test:vectors`, `… test:contract`, and the detector's
   `pytest`. DB integration tests need an **isolated** DB (`DETECTOR_TEST_DATABASE_URL`) or they skip — never
-  run them against a dirty outbox. Reaper + real detectors + Docker/Compose are Prompts 08–09/14. Details:
+  run them against a dirty outbox. Stale-lock reaper + PERTENTANGAN_BUKTI + Docker/Compose are Prompts
+  08-reaper/09/14. Details:
   `docs/solutions/integration-issues/python-detector-worker-outbox-psycopg3.md`.
+- **Detectors 1 & 2 (`repeat_billing.py` + `cloning.py`, Prompt 08).** Detectors are **pure functions** over
+  `Episode` (+ an injected `corpus`) + `Config`; `run_detectors(episode, corpus, cfg)` is the only seam the
+  worker calls. **`Finding` idempotency:** a `Finding.dedupeKey` column + `@@unique([episodeId, detector,
+dedupeKey])` + `ON CONFLICT DO NOTHING` make re-detection safe (no natural key otherwise). The key MUST be
+  **corpus-invariant** (repeat-billing: `sha256(canonical_json([code, sorted(claimNos)]))` — NOT a `"|"`-join,
+  `claimNo` is unconstrained; cloning: `sha256(record.id)` — NOT the matched set, which grows). `insert_findings`
+  must **never inspect rowcount** (a conflict-skip is success; the lease fence stays on the OutboxJob UPDATEs).
+  **Repeat billing** keys on the `PROCEDURE` `ClaimLine.code` (NOT `inacbgCode`, which is random per claim):
+  non-repeatable code on ≥2 distinct `claimNo`s, same patient + same UTC day; collapse claim history, drop
+  CANCELLED/ENTERED_IN_ERROR, remove exception codes first. **Cloning** is cross-episode: the worker loads the
+  whole-DB corpus via `repository.load_clone_corpus` as a **separate autocommit read** (between the episode
+  snapshot and the write tx), gated by `detectors.needs_corpus(episode)`. TF-IDF cosine over **word 1–3-grams**,
+  and the load-bearing trick — **`max_df` (drop corpus-common terms), NOT idf, is what separates copied
+  CONTENT from shared STRUCTURE**: exact-duplicate SOAP templates score cosine 1.0 regardless of idf (it
+  cancels), so without `max_df` cloning over-flags clean/template episodes. `CLONING_MIN_CORPUS` is a real
+  floor (a k-member clone needs `k ≤ max_df·N`), not idf-stability flavor. Stay on the **sparse path** (never
+  densify) for deterministic scores; scores drift as the corpus grows (only the dedupe-key identity is
+  stable). Thresholds/exception-codes are env (`Config.from_env`, NaN/inf/0 rejected); other tuning is module
+  constants. `strip_boilerplate`'s narrative-line prefixes are a **consumed contract** pinned in
+  `test-vectors/narrative-format.json` (asserted both sides). scikit-learn + its full closure are exact-pinned.
+  Test precision against the **real synthetic manifest** (assert exactly the planted set flags), not just hand
+  fixtures. Details: `docs/solutions/integration-issues/detectors-repeat-billing-cloning-tfidf.md`.
 - **Enums have one source of truth.** Values live in `@tilik/shared`, mirrored in `schema.prisma`;
   `packages/db/scripts/check-enum-parity.ts` fails `typecheck` on drift. Use `@tilik/shared` enums at
   DTO/validation/API boundaries, Prisma enums only at the persistence edge.

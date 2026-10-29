@@ -1,0 +1,5 @@
+{
+  "_comment": "Contract between data/synthetic (narrative generation, Prompt 04) and services/detector (cloning.strip_boilerplate, Prompt 08). strip_boilerplate removes exactly these two leading lines before TF-IDF: the synthetic-data disclaimer and the patient-identity line. If the generator changed either prefix, cloning would silently degrade (identity text leaking in dilutes true clones; boilerplate inflates templates). Asserted from BOTH sides so drift fails CI: data/synthetic/tests/test_narrative_format.py and services/detector/tests/test_cloning.py.",
+  "disclaimerPrefix": "[Data sintetis",
+  "identityPrefix": "Nama:"
+}
