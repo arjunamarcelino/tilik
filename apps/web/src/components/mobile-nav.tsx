@@ -1,25 +1,65 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { NavLinks, type NavItem } from './nav-links';
 
-/** Hamburger + slide-in drawer for small screens. Disclosure semantics: aria-expanded/controls, Esc to
- *  close, backdrop click, focus returns to the trigger. Hidden at lg (the persistent rail takes over). */
+/**
+ * Hamburger + slide-in drawer for small screens. Honest modal-disclosure semantics (review P2-6):
+ * aria-expanded/controls on the trigger; on open → focus moves into the dialog, Tab is trapped, and body
+ * scroll is locked; on close (Esc, backdrop, or nav) → focus returns to the trigger. Hidden at lg where
+ * the persistent rail takes over.
+ */
 export function MobileNav({ items }: { items: NavItem[] }) {
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
+    const dialog = dialogRef.current;
+    const focusables = () =>
+      Array.from(
+        dialog?.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      );
+
+    focusables()[0]?.focus(); // move focus into the dialog on open
+
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden'; // scroll lock
+
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
+      if (e.key === 'Escape') {
+        setOpen(false);
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      const list = focusables();
+      const first = list.at(0);
+      const last = list.at(-1);
+      if (!first || !last) return;
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+      triggerRef.current?.focus(); // restore focus to the trigger on close
+    };
   }, [open]);
 
   return (
     <div className="lg:hidden">
       <button
+        ref={triggerRef}
         type="button"
         aria-label={open ? 'Close navigation menu' : 'Open navigation menu'}
         aria-expanded={open}
@@ -50,6 +90,7 @@ export function MobileNav({ items }: { items: NavItem[] }) {
             className="absolute inset-0 bg-brand-ink/40"
           />
           <div
+            ref={dialogRef}
             id="mobile-primary-nav"
             role="dialog"
             aria-modal="true"
