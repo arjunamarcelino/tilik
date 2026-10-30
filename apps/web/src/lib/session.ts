@@ -1,7 +1,7 @@
 import 'server-only';
 import { cookies } from 'next/headers';
+import { SESSION_COOKIE as COOKIE } from './constants';
 
-const COOKIE = 'session';
 // Scoped to the API's 60-min JWT as a best-effort UX bound; the API's per-request re-validation (and
 // the DAL's 401→logout) is the real authority, so this is a hint, not a security boundary.
 const MAX_AGE_SECONDS = 60 * 60;

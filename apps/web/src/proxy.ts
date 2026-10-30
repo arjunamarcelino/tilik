@@ -2,9 +2,10 @@
 // (NextRequest API) — distinct from the async cookies() helper used in Server Components/Actions.
 // OPTIMISTIC redirect only: the real gate is the API (per-request JWT re-validation) reached via the DAL.
 import { NextResponse, type NextRequest } from 'next/server';
+import { SESSION_COOKIE } from '@/lib/constants';
 
 export default function proxy(req: NextRequest) {
-  const token = req.cookies.get('session')?.value;
+  const token = req.cookies.get(SESSION_COOKIE)?.value;
   const { pathname } = req.nextUrl;
 
   if (pathname === '/login') {
