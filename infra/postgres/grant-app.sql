@@ -18,6 +18,14 @@
 -- reset too. (USAGE only — never CREATE: the non-owner must not alter the schema.)
 GRANT USAGE ON SCHEMA public TO tilik_app;
 
+-- Version-independent DDL lock (review P3-8): on PG ≤14 schema public grants CREATE to PUBLIC by default,
+-- which tilik_app would inherit regardless of the init's role-targeted REVOKE; and a `migrate reset`
+-- recreates public with cluster defaults. Revoking from PUBLIC here (idempotent, reset-safe) ensures the
+-- non-owner can never create objects to shadow the append-only triggers, on any PG version. (No-op on the
+-- pinned PG16, where PUBLIC gets no CREATE by default.)
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+REVOKE CREATE ON SCHEMA public FROM tilik_app;
+
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO tilik_app;
 -- No sequences today: every PK is an app-generated TEXT id (cuid/uuid), not SERIAL. Kept so a future
 -- autoincrement column grants correctly without editing this file; harmless no-op until then.
