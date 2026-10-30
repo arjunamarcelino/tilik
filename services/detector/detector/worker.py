@@ -27,7 +27,7 @@ import psycopg
 from . import db, log, repository
 from .config import Config
 from .detectors import needs_corpus, run_detectors
-from .models import CloneDoc, Episode, FindingDraft, max_severity
+from .models import CloneDoc, Episode, FindingDraft
 
 Logger = logging.LoggerAdapter | logging.Logger
 Detect = Callable[[Episode, Sequence[CloneDoc], Config], list[FindingDraft]]
@@ -138,7 +138,10 @@ def _aggregate_and_audit(
     repository.insert_evidence_links(conn, [link for d in drafts for link in d.evidence_links])
     case_id: str | None = None
     if drafts:
-        case_id = repository.upsert_case(conn, episode_id, max_severity(d.severity for d in drafts))
+        # Seed severity is transient — it only satisfies the NOT-NULL column on a first INSERT and is
+        # immediately overwritten by recompute_case_severity from the persisted findings. Any draft's
+        # severity works; no need to compute a max here.
+        case_id = repository.upsert_case(conn, episode_id, drafts[0].severity)
         repository.attach_findings_to_case(conn, episode_id, case_id)
         repository.recompute_case_severity(conn, case_id)
     repository.insert_audit_event(

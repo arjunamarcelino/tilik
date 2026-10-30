@@ -15,7 +15,6 @@ traceback frame-local cannot dump sensitive content — only opaque ids and shap
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
@@ -33,18 +32,6 @@ class Severity(StrEnum):
     LOW = "LOW"
     MEDIUM = "MEDIUM"
     HIGH = "HIGH"
-
-
-# Severity ordering lives with the enum (not in a detector) — it's a property of the type, reused by the
-# worker to derive a Case's severity. Mirrors the Prisma enum's declaration order, which is also how
-# Postgres orders `max("severity")` in the Case recompute (so both sides agree on LOW < MEDIUM < HIGH).
-_SEVERITY_RANK = {Severity.LOW: 0, Severity.MEDIUM: 1, Severity.HIGH: 2}
-
-
-def max_severity(items: Iterable[Severity]) -> Severity:
-    """The highest severity in ``items`` (LOW < MEDIUM < HIGH). Raises ``ValueError`` on an empty iterable —
-    the worker only derives a case severity when the episode has at least one finding."""
-    return max(items, key=_SEVERITY_RANK.__getitem__)
 
 
 def _mask_token(token: str) -> str:

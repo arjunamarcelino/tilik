@@ -294,8 +294,8 @@ RETURNING "id"
 """
 
 # Authoritative case severity = max over the findings actually attached to it (NOT the transient draft set:
-# cloning's severity drifts with the corpus). Postgres orders the "Severity" enum by declaration order
-# (LOW < MEDIUM < HIGH), matching models._SEVERITY_RANK.
+# cloning's severity drifts with the corpus). Postgres orders the "Severity" enum by its declaration order
+# (CREATE TYPE … AS ENUM ('LOW','MEDIUM','HIGH')), so max() yields HIGH > MEDIUM > LOW.
 _RECOMPUTE_CASE_SEVERITY_SQL = """
 UPDATE "Case"
 SET "severity" = (SELECT max("severity") FROM "Finding" WHERE "caseId" = %(cid)s),
