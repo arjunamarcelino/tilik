@@ -40,4 +40,7 @@ def test_detect_audit_action_matches_contract() -> None:
     # either side would silently mislabel the audit timeline, so the string is pinned both sides against
     # test-vectors/audit-contract.json (TS half: apps/api test:contract).
     actions = json.loads(_AUDIT_FIXTURE.read_text(encoding="utf-8"))["actions"]
-    assert repository.AUDIT_ACTION_DETECT == actions["DETECT"]
+    # Pin the whole action set the detector mirrors (not just the DETECT value), so a new boundary-crossing
+    # action added to the fixture forces a matching Python mirror here instead of silently drifting.
+    assert set(actions) == {"DETECT"}
+    assert actions["DETECT"] == repository.AUDIT_ACTION_DETECT
