@@ -86,7 +86,8 @@ def detect_pertentangan(episode: Episode, cfg: Config) -> list[FindingDraft]:
             draft = _assess(episode, claim, code, evidence_by_id)
             if draft is not None:
                 drafts.append(draft)
-    # Stable order regardless of PYTHONHASHSEED (claim iteration + set above are deterministic, but pin it).
+    # Emit in a stable (claim_version_id, code) order. Inputs are already deterministic (representative
+    # order + sorted codes), so this is normalization for stable output/tests, not hash-seed hardening.
     drafts.sort(key=lambda d: (d.claim_version_id or "", d.reasons["detail"]["procedureCode"]))
     return drafts
 
@@ -94,7 +95,7 @@ def detect_pertentangan(episode: Episode, cfg: Config) -> list[FindingDraft]:
 def _assess(
     episode: Episode, claim: ClaimVersionView, code: str, evidence_by_id: dict[str, EvidenceView]
 ) -> FindingDraft | None:
-    support = _resolved_support(episode, claim, evidence_by_id)
+    support = _linked(episode, claim, _REL_SUPPORT, evidence_by_id)
     if support:
         # Only reach the timing branch with a non-empty list — a vacuous all() over [] would be a spurious
         # MEDIUM. If every supporting doc was captured after the claim was submitted → late/external.
@@ -103,37 +104,30 @@ def _assess(
             return _build(claim, code, latest, late=True)
         return None  # support present and at least one piece timely → clean
 
-    # No resolved supporting evidence → contradiction, but only if a source record anchors it.
-    anchor = _anchor(episode, claim, evidence_by_id)
-    return None if anchor is None else _build(claim, code, anchor, late=False)
+    # No supporting evidence → contradiction, but only if a source (``sumber``) record anchors the
+    # bertentangan link. A surgical claim with no source record (the repeat-billing family: zero evidence)
+    # has nothing to contradict → abstain. ``_linked`` returns id-sorted, so [0] is the lowest-id anchor.
+    sources = _linked(episode, claim, _REL_SOURCE, evidence_by_id)
+    return _build(claim, code, sources[0], late=False) if sources else None
 
 
-def _resolved_support(
-    episode: Episode, claim: ClaimVersionView, evidence_by_id: dict[str, EvidenceView]
+def _linked(
+    episode: Episode, claim: ClaimVersionView, relation: str, evidence_by_id: dict[str, EvidenceView]
 ) -> list[EvidenceView]:
-    """The in-episode evidence records that support this claim (``mendukung`` links resolved to records)."""
-    return [
-        evidence_by_id[ln.evidence_id]
-        for ln in episode.links
-        if ln.claim_version_id == claim.id and ln.relation == _REL_SUPPORT and ln.evidence_id in evidence_by_id
-    ]
+    """In-episode evidence records linked to this claim version by ``relation``, sorted by id.
 
-
-def _anchor(
-    episode: Episode, claim: ClaimVersionView, evidence_by_id: dict[str, EvidenceView]
-) -> EvidenceView | None:
-    """The source (``sumber``) record for this claim to hang the ``bertentangan`` link on (lowest id on a
-    tie). A surgical claim with no source record (the repeat-billing family: zero evidence) has nothing to
-    contradict → ``None`` → the detector abstains."""
-    candidates = sorted(
+    Keys strictly on the representative version's id, so a link left on a *superseded* version is invisible.
+    Safe here: the import attaches links to the current version (and the generator pins ``version == 1``, so
+    there are no multi-version claims in the data) — mirrors ``repeat_billing._linked_evidence``'s assumption.
+    """
+    return sorted(
         (
             evidence_by_id[ln.evidence_id]
             for ln in episode.links
-            if ln.claim_version_id == claim.id and ln.relation == _REL_SOURCE and ln.evidence_id in evidence_by_id
+            if ln.claim_version_id == claim.id and ln.relation == relation and ln.evidence_id in evidence_by_id
         ),
         key=lambda e: e.id,
     )
-    return candidates[0] if candidates else None
 
 
 def _build(claim: ClaimVersionView, code: str, anchor: EvidenceView, *, late: bool) -> FindingDraft:
