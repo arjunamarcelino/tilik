@@ -7,14 +7,6 @@ import { apiBase } from './env';
 import { CaseStatsSchema, MeSchema } from './schemas';
 import { readToken } from './session';
 
-/** Authenticated but lacking the required role — do NOT log out (distinct from a 401). */
-export class ForbiddenError extends Error {
-  constructor() {
-    super('Forbidden');
-    this.name = 'ForbiddenError';
-  }
-}
-
 interface Parser<T> {
   parse(input: unknown): T;
 }
@@ -41,8 +33,8 @@ async function apiFetch<T>(path: string, schema: Parser<T>, init?: RequestInit):
     throw new Error('The API is unreachable.');
   }
 
-  if (res.status === 401) redirect('/logout');
-  if (res.status === 403) throw new ForbiddenError();
+  if (res.status === 401) redirect('/logout'); // expired/deactivated → clear session + bounce
+  if (res.status === 403) throw new Error('Forbidden (403)'); // authorized-but-wrong-role: stay logged in, don't redirect
   if (!res.ok) throw new Error(`API request failed (${res.status}).`);
 
   return schema.parse(await res.json());
