@@ -93,7 +93,16 @@ def test_planted_contradictions_are_high_with_bertentangan_link() -> None:
         assert len(f.evidence_links) == 1
         link = f.evidence_links[0]
         assert link.claim_version_id == f.claim_version_id
-        assert link.evidence_id in f.evidence_refs
+        # The link must anchor on the claim's actual `sumber` record — not merely some id that also happens
+        # to be in evidence_refs (both come from the same anchor, so that would be tautological).
+        sumber = {
+            ln.evidence_id
+            for ln in episodes[ref].links
+            if ln.relation == "sumber" and ln.claim_version_id == f.claim_version_id
+        }
+        assert sumber, f"{ref}: planted contradiction should carry a sumber record to anchor on"
+        assert link.evidence_id in sumber
+        assert f.evidence_refs == [link.evidence_id]
 
 
 def test_clean_and_exception_families_are_not_flagged() -> None:
@@ -101,9 +110,11 @@ def test_clean_and_exception_families_are_not_flagged() -> None:
     episodes, labels = load_episodes(), load_labels()
     cfg = _cfg()
 
-    for ref, lbl in labels.items():
-        if lbl.get("category") in _CLEAN_LIKE:
-            assert detect_pertentangan(episodes[ref], cfg) == [], f"{ref} ({lbl.get('category')}) must not flag"
+    clean_like = [ref for ref, lbl in labels.items() if lbl.get("category") in _CLEAN_LIKE]
+    assert clean_like, "manifest should contain clean/exception/repeat-billing episodes to test precision"
+    for ref in clean_like:
+        category = labels[ref].get("category")
+        assert detect_pertentangan(episodes[ref], cfg) == [], f"{ref} ({category}) must not flag"
 
 
 def test_surgical_set_covers_planted_fraud_codes() -> None:
