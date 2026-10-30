@@ -58,8 +58,10 @@ export class AuthService {
   }
 
   /**
-   * Resolve the authenticated `sub` to a safe profile for `GET /v1/auth/me`. The global JwtAuthGuard has
-   * already re-validated the user this request; a null here means it was deactivated in between → 401.
+   * Resolve the authenticated `sub` to a safe profile for `GET /v1/auth/me`. Liveness is enforced UPSTREAM:
+   * the global JwtAuthGuard's JwtStrategy.validate re-checks `isActive` on every request, so a deactivated
+   * user never reaches here. `findProfileById` itself does NOT filter `isActive` (it's the safe
+   * {id,email,role} projection, never passwordHash) — a null means the row was deleted, not deactivated.
    */
   async profile(userId: string): Promise<Me> {
     const user = await this.users.findProfileById(userId);
