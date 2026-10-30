@@ -58,7 +58,7 @@ _INACTIVE = {"CANCELLED", "ENTERED_IN_ERROR"}  # a cancelled / error-marked clai
 
 _REL_SUPPORT = "mendukung"
 _REL_SOURCE = "sumber"
-_REL_CONTRADICT = "bertentangan"  # DB CHECK-constrained; the PERTENTANGAN_BUKTI output signal
+# (the 'bertentangan' output relation is implicit — hard-coded in repository.insert_evidence_links)
 
 _MISSING_SCORE = 1.0  # required support absent — an unsubstantiated surgical claim
 _LATE_SCORE = 0.5  # support present but late/external — needs-more-info, not an outright denial
@@ -151,9 +151,7 @@ def _build(claim: ClaimVersionView, code: str, anchor: EvidenceView, *, late: bo
     else:
         severity, score, reason_code = Severity.HIGH, _MISSING_SCORE, _REASON_MISSING
         message = f"Klaim bedah {code} ({label}) tanpa bukti tindakan (laporan operasi/anestesi tidak ditemukan)."
-        links = (
-            EvidenceLinkDraft(evidence_id=anchor.id, claim_version_id=claim.id, relation=_REL_CONTRADICT, note=_NOTE_MISSING),
-        )
+        links = (EvidenceLinkDraft(evidence_id=anchor.id, claim_version_id=claim.id, note=_NOTE_MISSING),)
 
     reasons = {
         "messages": [message],

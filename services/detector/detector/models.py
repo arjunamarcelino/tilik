@@ -147,9 +147,11 @@ class CloneDoc(NamedTuple):
 
 
 class EvidenceLinkDraft(NamedTuple):
-    """A claim↔evidence link a detector asks the worker to write — the PERTENTANGAN_BUKTI detector emits a
-    ``relation='bertentangan'`` link tying the in-tension evidence to the offending claim version. The write
-    lives in ``repository.insert_evidence_links`` (the detector stays a pure function).
+    """A ``bertentangan`` (contradiction) link the PERTENTANGAN_BUKTI detector asks the worker to write,
+    tying the in-tension evidence to the offending claim version. The relation is implicit — ``bertentangan``
+    is the only link a detector ever writes, hard-coded in ``repository.insert_evidence_links`` so a detector
+    can never reach the import pipeline's provenance relations (``mendukung``/``sumber``). The write lives in
+    the repository (the detector stays a pure function).
 
     ``note`` is ALWAYS a detector-authored constant string, never clinical content: a ``NamedTuple``'s
     default repr prints every field, so a stray log of a draft would otherwise leak it.
@@ -157,7 +159,6 @@ class EvidenceLinkDraft(NamedTuple):
 
     evidence_id: str
     claim_version_id: str | None
-    relation: str  # 'bertentangan' (DB CHECK-constrained)
     note: str | None
 
 

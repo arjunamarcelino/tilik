@@ -92,7 +92,6 @@ def test_planted_contradictions_are_high_with_bertentangan_link() -> None:
         assert f.dedupe_key
         assert len(f.evidence_links) == 1
         link = f.evidence_links[0]
-        assert link.relation == "bertentangan"
         assert link.claim_version_id == f.claim_version_id
         assert link.evidence_id in f.evidence_refs
 

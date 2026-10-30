@@ -268,12 +268,16 @@ def insert_findings(conn: psycopg.Connection, episode_id: str, drafts: list[Find
 # worker holds the episode's lease and a bertentangan link is episode-scoped (non-null claimVersionId): a
 # reaper-preempted peer's whole tx (incl. its duplicate link) rolls back at mark_done. A future
 # cross-episode/multi-writer link would need a real unique index instead.
+#
+# The relation is HARD-CODED to 'bertentangan' (not a bound value): the detector may only ever record the
+# contradiction relation, never the import pipeline's provenance relations (sumber/mendukung) — the write
+# surface is constrained here, not left to the caller's draft.
 _INSERT_EVIDENCE_LINK_SQL = """
 INSERT INTO "EvidenceLink" ("id", "evidenceId", "claimVersionId", "relation", "note")
-SELECT %(id)s, %(ev)s, %(cv)s, %(rel)s, %(note)s
+SELECT %(id)s, %(ev)s, %(cv)s, 'bertentangan', %(note)s
 WHERE NOT EXISTS (
     SELECT 1 FROM "EvidenceLink"
-    WHERE "evidenceId" = %(ev)s AND "claimVersionId" = %(cv)s AND "relation" = %(rel)s
+    WHERE "evidenceId" = %(ev)s AND "claimVersionId" = %(cv)s AND "relation" = 'bertentangan'
 )
 """
 
@@ -314,8 +318,9 @@ VALUES (%(id)s, %(actor)s, %(action)s, %(targetType)s, %(targetId)s, %(metadata)
 
 
 def insert_evidence_links(conn: psycopg.Connection, links: list[EvidenceLinkDraft]) -> None:
-    """Insert each ``bertentangan`` link idempotently (WHERE NOT EXISTS). NEVER inspects rowcount — a skip
-    is success (same discipline as insert_findings). No-op when ``links`` is empty."""
+    """Insert each ``bertentangan`` link idempotently (WHERE NOT EXISTS). The relation is hard-coded in the
+    SQL (a detector may only write ``bertentangan``). NEVER inspects rowcount — a skip is success (same
+    discipline as insert_findings). No-op when ``links`` is empty."""
     for link in links:
         conn.execute(
             _INSERT_EVIDENCE_LINK_SQL,
@@ -323,7 +328,6 @@ def insert_evidence_links(conn: psycopg.Connection, links: list[EvidenceLinkDraf
                 "id": uuid.uuid4().hex,
                 "ev": link.evidence_id,
                 "cv": link.claim_version_id,
-                "rel": link.relation,
                 "note": link.note,
             },
         )
