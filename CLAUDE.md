@@ -137,6 +137,18 @@ dedupeKey])` + `ON CONFLICT DO NOTHING` make re-detection safe (no natural key o
   `test-vectors/narrative-format.json` (asserted both sides). scikit-learn + its full closure are exact-pinned.
   Test precision against the **real synthetic manifest** (assert exactly the planted set flags), not just hand
   fixtures. Details: `docs/solutions/integration-issues/detectors-repeat-billing-cloning-tfidf.md`.
+- **Detector 3 (`pertentangan.py`, Prompt 09) — evidence contradiction, pure rule.** A surgical procedure
+  (code in a module-constant set, fixture-coupled to `SURGICAL_PROCEDURES`) billed with **no `mendukung`
+  support**: support absent + a `sumber` anchor present → `HIGH` (+ emits one `bertentangan`
+  `EvidenceLinkDraft`); support present but all captured after `submittedAt` → `MEDIUM` (needs-more-info, **no
+  link** — the doc already `mendukung`-supports the claim, so a `bertentangan` link would self-contradict);
+  support timely → clean; no evidence at all → **abstain** (no anchor; that's REPEAT_BILLING's episode). The
+  `diagnosis→lab` rule is deliberately **not** built (it would false-positive on every diagnosis-without-lab
+  episode). dedupe key is `sha256(canonical_json([claim_no, code]))` (NOT `cv.id` — resubmission-stable).
+  **Writes:** the `bertentangan` relation is hard-coded in `repository.insert_evidence_links` (the detector
+  never writes `sumber`/`mendukung`); `Case.severity` is recomputed from the **persisted** findings (enum
+  `max()` = declaration order), not the drafts. Details:
+  `docs/solutions/integration-issues/detector-contradiction-case-aggregation-prompt09.md`.
 - **Enums have one source of truth.** Values live in `@tilik/shared`, mirrored in `schema.prisma`;
   `packages/db/scripts/check-enum-parity.ts` fails `typecheck` on drift. Use `@tilik/shared` enums at
   DTO/validation/API boundaries, Prisma enums only at the persistence edge.
