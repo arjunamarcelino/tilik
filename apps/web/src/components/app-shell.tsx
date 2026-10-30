@@ -1,6 +1,5 @@
-import { Role } from '@tilik/shared';
+import { Role, roleSatisfies } from '@tilik/shared';
 import type { Me } from '@tilik/shared/contracts';
-import { roleSatisfies } from '@/lib/dal';
 import { navItemsFor } from './nav-config';
 import { NavLinks } from './nav-links';
 import { TopBar } from './top-bar';

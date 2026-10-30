@@ -1,7 +1,7 @@
 import 'server-only';
 import { cache } from 'react';
 import { redirect } from 'next/navigation';
-import { Role } from '@tilik/shared';
+import { Role, roleSatisfies } from '@tilik/shared';
 import type { CaseStats, Me } from '@tilik/shared/contracts';
 import { apiBase } from './env';
 import { CaseStatsSchema, MeSchema } from './schemas';
@@ -57,10 +57,6 @@ export const getCurrentUser = cache(
 export const getCaseStats = cache(
   (): Promise<CaseStats> => apiFetch('/cases/stats', CaseStatsSchema, { next: { revalidate: 15 } }), // global, non-personalized
 );
-
-const RANK: Record<Role, number> = { [Role.REVIEWER]: 1, [Role.ADMIN]: 2 };
-/** Mirrors the API's hierarchical RolesGuard: ADMIN ⊇ REVIEWER. NOT strict equality. */
-export const roleSatisfies = (have: Role, need: Role): boolean => RANK[have] >= RANK[need];
 
 /** Structural page gate — call first-line in every (app) page, even ones that fetch no data. */
 export async function requireSession(): Promise<Me> {

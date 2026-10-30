@@ -1,16 +1,9 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { Role } from '@tilik/shared';
+import { Role, roleSatisfies } from '@tilik/shared';
 import { AuditService } from '../../audit/audit.service';
 import type { AuthenticatedRequest } from '../../common/types/auth';
 import { ROLES_KEY } from '../decorators/roles.decorator';
-
-// ADMIN ⊇ REVIEWER: an ADMIN satisfies any REVIEWER-gated route without double-tagging. Exhaustively
-// keyed over the finite Role union, so the lookup is never `undefined` (no `?? []` needed).
-const HIERARCHY: Record<Role, readonly Role[]> = {
-  [Role.ADMIN]: [Role.ADMIN, Role.REVIEWER],
-  [Role.REVIEWER]: [Role.REVIEWER],
-};
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -27,8 +20,8 @@ export class RolesGuard implements CanActivate {
     if (!required?.length) return true; // no @Roles → an authenticated user is enough
 
     const { user } = context.switchToHttp().getRequest<AuthenticatedRequest>();
-    const granted = HIERARCHY[user.role];
-    const allowed = required.some((role) => granted.includes(role));
+    // ADMIN ⊇ REVIEWER via the shared hierarchy (single source of truth in @tilik/shared).
+    const allowed = required.some((role) => roleSatisfies(user.role, role));
 
     if (!allowed) {
       // Best-effort: record the denial (high-signal for a fraud trail) without blocking the 403.
