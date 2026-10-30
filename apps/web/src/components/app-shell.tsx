@@ -1,12 +1,16 @@
 import { Role, roleSatisfies } from '@tilik/shared';
 import type { Me } from '@tilik/shared/contracts';
-import { navItemsFor } from './nav-config';
-import { NavLinks } from './nav-links';
+import { NavLinks, type NavItem } from './nav-links';
 import { TopBar } from './top-bar';
 
 /** Authenticated shell: skip link, top bar, a persistent left rail (desktop), and the main region. */
 export function AppShell({ user, children }: { user: Me; children: React.ReactNode }) {
-  const items = navItemsFor(roleSatisfies(user.role, Role.ADMIN));
+  // Primary nav; Import is admin-only — omitted (not disabled) for reviewers, backed by the server gate.
+  const items: NavItem[] = [
+    { href: '/dashboard', label: 'Dashboard' },
+    { href: '/cases', label: 'Cases' },
+  ];
+  if (roleSatisfies(user.role, Role.ADMIN)) items.push({ href: '/import', label: 'Import' });
 
   return (
     <div className="min-h-dvh">
