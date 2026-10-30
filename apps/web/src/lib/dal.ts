@@ -33,9 +33,10 @@ async function apiFetch<T>(path: string, schema: Parser<T>, init?: RequestInit):
   headers.set('authorization', `Bearer ${token}`);
   headers.set('accept', 'application/json');
 
+  const url = `${apiBase()}${path}`; // outside the try — a config error must not masquerade as "unreachable"
   let res: Response;
   try {
-    res = await fetch(`${apiBase()}${path}`, { ...init, headers });
+    res = await fetch(url, { ...init, headers });
   } catch {
     throw new Error('The API is unreachable.');
   }

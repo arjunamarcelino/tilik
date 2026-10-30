@@ -1,12 +1,8 @@
-import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
-import { loadEnvConfig } from '@next/env';
 import type { NextConfig } from 'next';
 
-// Single root .env (repo convention): load it at config time so NEXT_PUBLIC_* is inlined at build.
-// Only NEXT_PUBLIC_* reaches the browser; web code must never read a non-public key.
-const dir = dirname(fileURLToPath(import.meta.url));
-loadEnvConfig(resolve(dir, '../..'), process.env.NODE_ENV !== 'production');
+// The single repo-root .env is loaded by ./load-env.mjs (NODE_OPTIONS preload in the package scripts),
+// so process.env is populated for the CLI, this config, AND the render workers. Only NEXT_PUBLIC_*
+// reaches the browser; web code must never read a non-public key.
 
 const nextConfig: NextConfig = {
   // @tilik/shared is a workspace package — let Next compile/bundle it consistently.
