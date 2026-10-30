@@ -28,19 +28,16 @@ def test_no_owner_database_url_key_in_source() -> None:
 def test_sql_constants_are_placeholder_only() -> None:
     # The resolved SQL constants must carry only %(name)s bind placeholders and no leftover f-string braces
     # (the one sanctioned f-string composes the static _FENCE fragment, which contains placeholders only).
+    #
+    # Discover the constants by naming convention (module-level `*_SQL` strings, plus the `_FENCE` fragment)
+    # rather than a hand-maintained list, so a newly-added SQL constant can't silently escape this guard.
     sql_constants = {
-        "_CLAIM_SQL": repository._CLAIM_SQL,
-        "_CLONE_CORPUS_SQL": repository._CLONE_CORPUS_SQL,
-        "_INSERT_EVIDENCE_LINK_SQL": repository._INSERT_EVIDENCE_LINK_SQL,
-        "_UPSERT_CASE_SQL": repository._UPSERT_CASE_SQL,
-        "_RECOMPUTE_CASE_SEVERITY_SQL": repository._RECOMPUTE_CASE_SEVERITY_SQL,
-        "_ATTACH_FINDINGS_SQL": repository._ATTACH_FINDINGS_SQL,
-        "_INSERT_AUDIT_EVENT_SQL": repository._INSERT_AUDIT_EVENT_SQL,
-        "_MARK_DONE_SQL": repository._MARK_DONE_SQL,
-        "_REQUEUE_SQL": repository._REQUEUE_SQL,
-        "_FAIL_SQL": repository._FAIL_SQL,
-        "_FENCE": repository._FENCE,
+        name: value
+        for name, value in vars(repository).items()
+        if isinstance(value, str) and (name.endswith("_SQL") or name == "_FENCE")
     }
+    # Sanity: discovery actually found the known constants (so a convention change can't vacuously pass).
+    assert {"_CLAIM_SQL", "_INSERT_EVIDENCE_LINK_SQL", "_INSERT_AUDIT_EVENT_SQL", "_FENCE"} <= sql_constants.keys()
     for name, sql in sql_constants.items():
         assert "{" not in sql and "}" not in sql, f"{name} has an unresolved interpolation brace"
         assert "%(" in sql, f"{name} should bind values via %(name)s placeholders"
