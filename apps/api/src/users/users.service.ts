@@ -35,6 +35,18 @@ export class UsersService implements OnApplicationBootstrap {
     });
   }
 
+  /**
+   * Safe profile projection for `GET /v1/auth/me`. Deliberately separate from `findActiveById` (the
+   * per-request JWT re-validation hot path) so email isn't loaded on every request — and NEVER routed
+   * through `findByEmail`, which returns the full row including `passwordHash`.
+   */
+  findProfileById(id: string): Promise<Pick<User, 'id' | 'email' | 'role'> | null> {
+    return this.prisma.user.findUnique({
+      where: { id },
+      select: { id: true, email: true, role: true },
+    });
+  }
+
   async onApplicationBootstrap(): Promise<void> {
     await this.seed();
   }
