@@ -281,26 +281,32 @@ WHERE NOT EXISTS (
 )
 """
 
-# DO UPDATE (not DO NOTHING) so a conflict still RETURNINGs the id — DO NOTHING returns zero rows. Only
-# "updatedAt" is bumped; status/assignedTo are reviewer-owned and never reset by re-detection. "updatedAt"
-# is in the INSERT column list because the column is NOT NULL with no DB default (Prisma's @updatedAt runs
-# in the query engine, which this raw psycopg3 path bypasses). The INSERT "severity" is only a NOT-NULL
-# seed — recompute_case_severity sets the authoritative value from the attached findings.
+# DO UPDATE (not DO NOTHING) so a conflict still RETURNINGs the id — DO NOTHING returns zero rows.
+# status/assignedTo are reviewer-owned and never reset by re-detection. On conflict the clause self-assigns
+# "updatedAt" to its EXISTING value (not now()), so a no-op re-detect does NOT churn the "last updated" a
+# reviewer sees — recompute_case_severity below owns the only meaningful bump. "updatedAt" is in the INSERT
+# column list because the column is NOT NULL with no DB default (Prisma's @updatedAt runs in the query
+# engine, which this raw psycopg3 path bypasses). The INSERT "severity" is only a NOT-NULL seed —
+# recompute_case_severity sets the authoritative value from the attached findings.
 _UPSERT_CASE_SQL = """
 INSERT INTO "Case" ("id", "episodeId", "status", "severity", "updatedAt")
 VALUES (%(id)s, %(ep)s, 'OPEN', %(severity)s, now())
-ON CONFLICT ("episodeId") DO UPDATE SET "updatedAt" = now()
+ON CONFLICT ("episodeId") DO UPDATE SET "updatedAt" = "Case"."updatedAt"
 RETURNING "id"
 """
 
 # Authoritative case severity = max over the findings actually attached to it (NOT the transient draft set:
 # cloning's severity drifts with the corpus). Postgres orders the "Severity" enum by its declaration order
-# (CREATE TYPE … AS ENUM ('LOW','MEDIUM','HIGH')), so max() yields HIGH > MEDIUM > LOW.
+# (CREATE TYPE … AS ENUM ('LOW','MEDIUM','HIGH')), so max() yields HIGH > MEDIUM > LOW. The IS DISTINCT FROM
+# guard bumps "updatedAt" only when the severity actually changes, so an idempotent re-detect is inert.
+# max() is never NULL here: a Case exists only once it has ≥1 attached finding, and findings are append-only
+# (never deleted), so the NOT-NULL "severity" column can't be violated.
 _RECOMPUTE_CASE_SEVERITY_SQL = """
 UPDATE "Case"
 SET "severity" = (SELECT max("severity") FROM "Finding" WHERE "caseId" = %(cid)s),
     "updatedAt" = now()
 WHERE "id" = %(cid)s
+  AND "severity" IS DISTINCT FROM (SELECT max("severity") FROM "Finding" WHERE "caseId" = %(cid)s)
 """
 
 # Attach every not-yet-attached finding for the episode (idempotent: WHERE caseId IS NULL matches nothing on
