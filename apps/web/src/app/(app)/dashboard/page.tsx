@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { CaseStatus } from '@tilik/shared';
-import { getCaseStats } from '@/lib/dal';
+import { getCaseStats, requireSession } from '@/lib/dal';
 import { EmptyState } from '@/components/ui/empty-state';
 import { SeverityBar } from '@/components/ui/severity-bar';
 import { StatCard } from '@/components/ui/stat-card';
@@ -16,6 +16,7 @@ const PIPELINE: { key: CaseStatus; label: string; accent: string }[] = [
 ];
 
 export default async function DashboardPage() {
+  await requireSession(); // structural gate, first-line — consistent with cases/import (review P3-3)
   const stats = await getCaseStats();
 
   return (

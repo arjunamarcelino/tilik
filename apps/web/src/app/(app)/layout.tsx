@@ -1,11 +1,10 @@
 import { AppShell } from '@/components/app-shell';
-import { getCaseStats, getCurrentUser } from '@/lib/dal';
+import { getCurrentUser } from '@/lib/dal';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  // Preload stats (don't await) so the request is in flight while /me resolves — avoids the me→stats
-  // waterfall. The .catch keeps a non-dashboard page from seeing an unhandled rejection; the dashboard
-  // awaits the same memoized promise and handles errors via its error boundary.
-  void getCaseStats().catch(() => {});
+  // No cross-route stats preload here: it only helped /dashboard yet ran on every (app) route (waste),
+  // and its floating `.catch` swallowed a NEXT_REDIRECT on non-dashboard pages (reviews P3-1, P3-11).
+  // The dashboard fetches its own stats; the tiny me→stats waterfall is acceptable for this tool.
   const user = await getCurrentUser();
   return <AppShell user={user}>{children}</AppShell>;
 }
