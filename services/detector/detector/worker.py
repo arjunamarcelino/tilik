@@ -9,8 +9,8 @@ Structure is carved into pure, DB-free seams so most of the logic is unit-testab
 wrapped by ``run_forever(...)`` for the drain/sleep/reconnect/signal loop.
 
 Claim-then-release: the claim commits ``PROCESSING`` in its own (autocommit) statement; detection runs
-between transactions; findings-insert + mark-DONE share ONE transaction, lease-fenced so a Prompt 08 reaper
-cannot cause a double-insert.
+between transactions; findings-insert + aggregation (bertentangan links, Case, DETECT audit) + mark-DONE
+share ONE transaction, lease-fenced so a Prompt 08 reaper cannot cause a double-insert.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ import psycopg
 from . import db, log, repository
 from .config import Config
 from .detectors import needs_corpus, run_detectors
-from .models import CloneDoc, Episode, FindingDraft
+from .models import CloneDoc, Episode, FindingDraft, max_severity
 
 Logger = logging.LoggerAdapter | logging.Logger
 Detect = Callable[[Episode, Sequence[CloneDoc], Config], list[FindingDraft]]
@@ -109,10 +109,12 @@ def run_once(
         # episode with no medical record doesn't trigger a whole-table scan for nothing.
         corpus = load_corpus(conn, episode_id) if needs_corpus(episode) else []
         drafts = detect(episode, corpus, cfg)
-        # Findings-insert + mark-DONE in ONE transaction. mark_done raises LeaseLostError (rolling back the
-        # insert) if a reaper preempted this worker — neither success nor failure.
+        # Findings-insert + aggregation + DETECT audit + mark-DONE in ONE transaction, mark_done LAST so its
+        # lease fence rolls the whole group back (findings, bertentangan links, Case, audit) if a reaper
+        # preempted this worker — neither success nor failure.
         with conn.transaction():
             repository.insert_findings(conn, episode_id, drafts)
+            _aggregate_and_audit(conn, cfg, episode_id, job_id, drafts)
             repository.mark_done(conn, job_id, cfg.worker_id)
         logger.info("job done", extra={**ctx, "findings": len(drafts)})
         return Tick.PROGRESSED
@@ -121,6 +123,40 @@ def run_once(
         return Tick.PROGRESSED
     except Exception as exc:  # classify application errors against the job; control-flow exceptions propagate
         return _resolve_failure(conn, cfg, logger, job, exc, ctx)
+
+
+def _aggregate_and_audit(
+    conn: psycopg.Connection, cfg: Config, episode_id: str, job_id: str, drafts: list[FindingDraft]
+) -> None:
+    """Group the episode's findings into one Case and write the DETECT audit — inside the caller's write tx.
+
+    Order: bertentangan links → Case (only when there are findings) → attach findings → recompute the
+    authoritative severity from the persisted findings → DETECT audit. The audit is written for EVERY
+    processed episode (even 0-finding); the Case is created only for flagged ones. ``mark_done`` stays LAST
+    in the caller, so its lease fence rolls all of this back on preemption.
+    """
+    repository.insert_evidence_links(conn, [link for d in drafts for link in d.evidence_links])
+    case_id: str | None = None
+    if drafts:
+        case_id = repository.upsert_case(conn, episode_id, max_severity(d.severity for d in drafts))
+        repository.attach_findings_to_case(conn, episode_id, case_id)
+        repository.recompute_case_severity(conn, case_id)
+    repository.insert_audit_event(
+        conn,
+        actor=cfg.worker_id,
+        action=repository.AUDIT_ACTION_DETECT,
+        target_type="Episode",
+        target_id=episode_id,
+        metadata=_detect_summary(drafts, case_id, job_id),
+    )
+
+
+def _detect_summary(drafts: list[FindingDraft], case_id: str | None, job_id: str) -> dict[str, Any]:
+    """DETECT audit metadata — ids/counts only, never narrative text or the patient token."""
+    counts: dict[str, int] = {}
+    for d in drafts:
+        counts[str(d.detector)] = counts.get(str(d.detector), 0) + 1
+    return {"jobId": job_id, "findings": counts, "caseId": case_id}
 
 
 def _resolve_failure(

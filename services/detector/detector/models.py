@@ -15,6 +15,7 @@ traceback frame-local cannot dump sensitive content — only opaque ids and shap
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
@@ -32,6 +33,18 @@ class Severity(StrEnum):
     LOW = "LOW"
     MEDIUM = "MEDIUM"
     HIGH = "HIGH"
+
+
+# Severity ordering lives with the enum (not in a detector) — it's a property of the type, reused by the
+# worker to derive a Case's severity. Mirrors the Prisma enum's declaration order, which is also how
+# Postgres orders `max("severity")` in the Case recompute (so both sides agree on LOW < MEDIUM < HIGH).
+_SEVERITY_RANK = {Severity.LOW: 0, Severity.MEDIUM: 1, Severity.HIGH: 2}
+
+
+def max_severity(items: Iterable[Severity]) -> Severity:
+    """The highest severity in ``items`` (LOW < MEDIUM < HIGH). Raises ``ValueError`` on an empty iterable —
+    the worker only derives a case severity when the episode has at least one finding."""
+    return max(items, key=_SEVERITY_RANK.__getitem__)
 
 
 def _mask_token(token: str) -> str:
@@ -133,6 +146,21 @@ class CloneDoc(NamedTuple):
     narrative: str
 
 
+class EvidenceLinkDraft(NamedTuple):
+    """A claim↔evidence link a detector asks the worker to write — the PERTENTANGAN_BUKTI detector emits a
+    ``relation='bertentangan'`` link tying the in-tension evidence to the offending claim version. The write
+    lives in ``repository.insert_evidence_links`` (the detector stays a pure function).
+
+    ``note`` is ALWAYS a detector-authored constant string, never clinical content: a ``NamedTuple``'s
+    default repr prints every field, so a stray log of a draft would otherwise leak it.
+    """
+
+    evidence_id: str
+    claim_version_id: str | None
+    relation: str  # 'bertentangan' (DB CHECK-constrained)
+    note: str | None
+
+
 @dataclass(frozen=True)
 class FindingDraft:
     """What a detector emits. Mapped to a ``Finding`` row by ``repository.insert_findings``.
@@ -151,6 +179,10 @@ class FindingDraft:
     frozen first row. ``reasons`` keeps a ``messages`` list of
     human-readable Indonesian triggers plus a structured ``detail`` object; it must never carry narrative
     text or the patient token (it lands in a DB column the redacting ``__repr__`` can't protect).
+
+    ``evidence_links`` is an optional second write target: ``bertentangan`` links the PERTENTANGAN_BUKTI
+    detector asks ``repository.insert_evidence_links`` to write (``insert_findings`` ignores it). Defaulting
+    to the empty tuple keeps the other detectors unchanged; it is immutable (not the mutable-default trap).
     """
 
     detector: DetectorType
@@ -160,6 +192,7 @@ class FindingDraft:
     evidence_refs: list[str]
     dedupe_key: str
     claim_version_id: str | None = None
+    evidence_links: tuple[EvidenceLinkDraft, ...] = ()
 
     def __repr__(self) -> str:  # omit reasons (may carry clinical explanation text)
         return (

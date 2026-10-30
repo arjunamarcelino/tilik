@@ -1,9 +1,12 @@
 # services/detector
 
 Python detector worker — polls the PostgreSQL transactional outbox (`OutboxJob`), claims `DETECT_EPISODE`
-jobs safely under concurrency, loads the episode, runs the detectors, and writes `Finding`s. **Prompt 07**
-ships the reliable loop + a byte-identical patient tokenizer + a **no-op** `run_detectors()` stub; the three
-real detectors (repeat billing, cloning, pertentangan bukti) land in Prompts 08–09.
+jobs safely under concurrency, loads the episode, runs the detectors, and writes the results. **Prompt 07**
+ships the reliable loop + a byte-identical patient tokenizer; **Prompt 08** adds the first two detectors
+(repeat billing, cloning); **Prompt 09** adds the third (`pertentangan bukti` — evidence contradiction) and
+the write-side aggregation: an episode's `Finding`s are grouped into one `Case`, contradictions record a
+`relation='bertentangan'` `EvidenceLink`, and a `DETECT` `AuditEvent` is written per processed episode —
+all inside the one lease-fenced write transaction with the findings insert.
 
 Not a pnpm workspace package (it's Python). It connects to the **same** Postgres Prisma owns as the
 **non-owner `tilik_app`** role and **never runs or alters migrations** — Prisma owns the schema.
@@ -16,10 +19,11 @@ detector/
   log.py         stdlib logging → JSON stdout (never logs secrets / patient tokens / claim content)
   tokenizer.py   patientToken HMAC — byte-identical to the API (see parity below)
   db.py          psycopg3 connect (non-owner boot assertion, keepalives, timeouts, Prisma-DSN normalization)
-  models.py      StrEnums + the Episode/*View input contract + the FindingDraft output contract
-  repository.py  all SQL: atomic claim, batched episode load, lease-fenced DONE/requeue/FAIL, findings insert
-  detectors.py   run_detectors(episode) -> list[FindingDraft]  (STUB: returns [] in Prompt 07)
-  worker.py      the poll loop, error taxonomy, graceful shutdown, `python -m detector.worker`
+  models.py      StrEnums (+ max_severity) + the Episode/*View input contract + the FindingDraft/EvidenceLinkDraft output
+  repeat_billing.py / cloning.py / pertentangan.py   the three pure detectors
+  repository.py  all SQL: atomic claim, batched episode load, findings insert, bertentangan link / Case upsert / DETECT audit, lease-fenced DONE/requeue/FAIL
+  detectors.py   run_detectors(episode, corpus, cfg) -> list[FindingDraft]  (the seam the worker calls)
+  worker.py      the poll loop, _aggregate_and_audit, error taxonomy, graceful shutdown, `python -m detector.worker`
 tests/           pure tests (tokenizer vectors, error classification, payload validation) + DB integration
 ```
 
@@ -35,12 +39,18 @@ uv pip install --python .venv -e '.[dev]'   # or: .venv/bin/pip install -e '.[de
 
 The worker reads config from the environment (no `.env` auto-load):
 
-| Variable                    | Required | Default | Notes                                                                                |
-| --------------------------- | -------- | ------- | ------------------------------------------------------------------------------------ |
-| `APP_DATABASE_URL`          | yes      | —       | **non-owner** `tilik_app` DSN; the worker asserts `current_user='tilik_app'` at boot |
-| `DETECTOR_POLL_INTERVAL_MS` | no       | `1000`  | idle poll interval                                                                   |
-| `DETECTOR_MAX_ATTEMPTS`     | no       | `5`     | requeue a transient failure until this many attempts, then `FAILED`                  |
-| `LOG_LEVEL`                 | no       | `info`  |                                                                                      |
+| Variable                          | Required | Default       | Notes                                                                                |
+| --------------------------------- | -------- | ------------- | ------------------------------------------------------------------------------------ |
+| `APP_DATABASE_URL`                | yes      | —             | **non-owner** `tilik_app` DSN; the worker asserts `current_user='tilik_app'` at boot |
+| `DETECTOR_POLL_INTERVAL_MS`       | no       | `1000`        | idle poll interval                                                                   |
+| `DETECTOR_MAX_ATTEMPTS`           | no       | `5`           | requeue a transient failure until this many attempts, then `FAILED`                  |
+| `DETECTOR_WORKER_ID`              | no       | auto          | lease identity **and** the `DETECT` audit `actor` — set a stable, identifiable value |
+| `DETECTOR_REPEAT_EXCEPTION_CODES` | no       | `39.95,99.25` | repeatable procedure codes never flagged for repeat billing (empty = no exceptions)  |
+| `DETECTOR_CLONING_THRESHOLD`      | no       | `0.85`        | min cosine to flag a cloned narrative (finite, `(0,1]`)                              |
+| `LOG_LEVEL`                       | no       | `info`        |                                                                                      |
+
+The contradiction detector's surgical-code set and severity scores are **module constants** in
+`pertentangan.py` (fixture-coupled to the generator, not operator dials), not environment variables.
 
 ```bash
 # from the repo root: bring up infra + seed jobs (Prompt 06), then run the worker

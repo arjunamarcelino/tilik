@@ -25,12 +25,15 @@ from .models import (
     ClaimVersionView,
     CloneDoc,
     Episode,
+    EvidenceLinkDraft,
     EvidenceLinkView,
     EvidenceView,
     FindingDraft,
+    Severity,
 )
 
 DETECT_EPISODE = "DETECT_EPISODE"  # OutboxJob.type (mirror of @tilik/shared/constants OUTBOX_JOB_TYPE)
+AUDIT_ACTION_DETECT = "DETECT"  # AuditEvent.action (mirror of @tilik/shared/constants AUDIT_ACTION.DETECT)
 
 
 class LeaseLostError(RuntimeError):
@@ -251,6 +254,121 @@ def insert_findings(conn: psycopg.Connection, episode_id: str, drafts: list[Find
                 "dedupeKey": d.dedupe_key,
             },
         )
+
+
+# --- Aggregation: bertentangan links, Case, DETECT audit (Prompt 09) ----------------------------
+#
+# All called INSIDE the worker's single write transaction (before the lease-fenced mark_done), so a
+# reaper-preempted worker rolls the whole group back. Like insert_findings, the INSERT helpers here are
+# idempotent and MUST NOT inspect rowcount — only the OutboxJob transitions below are lease-fenced.
+
+# Idempotent insert: a conditional WHERE NOT EXISTS, not a DB unique constraint. EvidenceLink is a mutable,
+# curated table the import pipeline also writes (sumber/mendukung), and its claimVersionId is nullable, so a
+# global unique index would have real blast radius there. The check-then-insert is safe HERE because one
+# worker holds the episode's lease and a bertentangan link is episode-scoped (non-null claimVersionId): a
+# reaper-preempted peer's whole tx (incl. its duplicate link) rolls back at mark_done. A future
+# cross-episode/multi-writer link would need a real unique index instead.
+_INSERT_EVIDENCE_LINK_SQL = """
+INSERT INTO "EvidenceLink" ("id", "evidenceId", "claimVersionId", "relation", "note")
+SELECT %(id)s, %(ev)s, %(cv)s, %(rel)s, %(note)s
+WHERE NOT EXISTS (
+    SELECT 1 FROM "EvidenceLink"
+    WHERE "evidenceId" = %(ev)s AND "claimVersionId" = %(cv)s AND "relation" = %(rel)s
+)
+"""
+
+# DO UPDATE (not DO NOTHING) so a conflict still RETURNINGs the id — DO NOTHING returns zero rows. Only
+# "updatedAt" is bumped; status/assignedTo are reviewer-owned and never reset by re-detection. "updatedAt"
+# is in the INSERT column list because the column is NOT NULL with no DB default (Prisma's @updatedAt runs
+# in the query engine, which this raw psycopg3 path bypasses). The INSERT "severity" is only a NOT-NULL
+# seed — recompute_case_severity sets the authoritative value from the attached findings.
+_UPSERT_CASE_SQL = """
+INSERT INTO "Case" ("id", "episodeId", "status", "severity", "updatedAt")
+VALUES (%(id)s, %(ep)s, 'OPEN', %(severity)s, now())
+ON CONFLICT ("episodeId") DO UPDATE SET "updatedAt" = now()
+RETURNING "id"
+"""
+
+# Authoritative case severity = max over the findings actually attached to it (NOT the transient draft set:
+# cloning's severity drifts with the corpus). Postgres orders the "Severity" enum by declaration order
+# (LOW < MEDIUM < HIGH), matching models._SEVERITY_RANK.
+_RECOMPUTE_CASE_SEVERITY_SQL = """
+UPDATE "Case"
+SET "severity" = (SELECT max("severity") FROM "Finding" WHERE "caseId" = %(cid)s),
+    "updatedAt" = now()
+WHERE "id" = %(cid)s
+"""
+
+# Attach every not-yet-attached finding for the episode (idempotent: WHERE caseId IS NULL matches nothing on
+# a re-run; also back-fills any pre-aggregation findings). A domain UPDATE, not an OutboxJob transition — so
+# it is deliberately NOT lease-fenced.
+_ATTACH_FINDINGS_SQL = """
+UPDATE "Finding" SET "caseId" = %(cid)s
+WHERE "episodeId" = %(ep)s AND "caseId" IS NULL
+"""
+
+_INSERT_AUDIT_EVENT_SQL = """
+INSERT INTO "AuditEvent" ("id", "actor", "action", "targetType", "targetId", "metadata")
+VALUES (%(id)s, %(actor)s, %(action)s, %(targetType)s, %(targetId)s, %(metadata)s)
+"""
+
+
+def insert_evidence_links(conn: psycopg.Connection, links: list[EvidenceLinkDraft]) -> None:
+    """Insert each ``bertentangan`` link idempotently (WHERE NOT EXISTS). NEVER inspects rowcount — a skip
+    is success (same discipline as insert_findings). No-op when ``links`` is empty."""
+    for link in links:
+        conn.execute(
+            _INSERT_EVIDENCE_LINK_SQL,
+            {
+                "id": uuid.uuid4().hex,
+                "ev": link.evidence_id,
+                "cv": link.claim_version_id,
+                "rel": link.relation,
+                "note": link.note,
+            },
+        )
+
+
+def upsert_case(conn: psycopg.Connection, episode_id: str, seed_severity: Severity) -> str:
+    """Find-or-create the episode's Case; return its (stable) id. ``seed_severity`` is only the NOT-NULL
+    seed for a first insert — call ``recompute_case_severity`` after attaching findings for the real value."""
+    return conn.execute(
+        _UPSERT_CASE_SQL,
+        {"id": uuid.uuid4().hex, "ep": episode_id, "severity": str(seed_severity)},
+    ).fetchone()["id"]
+
+
+def attach_findings_to_case(conn: psycopg.Connection, episode_id: str, case_id: str) -> None:
+    """Attach the episode's not-yet-attached findings to the Case (idempotent; also back-fills older ones)."""
+    conn.execute(_ATTACH_FINDINGS_SQL, {"cid": case_id, "ep": episode_id})
+
+
+def recompute_case_severity(conn: psycopg.Connection, case_id: str) -> None:
+    """Set Case.severity = max over its attached findings. Call after ``attach_findings_to_case``."""
+    conn.execute(_RECOMPUTE_CASE_SEVERITY_SQL, {"cid": case_id})
+
+
+def insert_audit_event(
+    conn: psycopg.Connection,
+    *,
+    actor: str,
+    action: str,
+    target_type: str,
+    target_id: str,
+    metadata: dict[str, Any],
+) -> None:
+    """INSERT one AuditEvent (append-only — the worker only ever inserts). ``metadata`` wrapped with Jsonb."""
+    conn.execute(
+        _INSERT_AUDIT_EVENT_SQL,
+        {
+            "id": uuid.uuid4().hex,
+            "actor": actor,
+            "action": action,
+            "targetType": target_type,
+            "targetId": target_id,
+            "metadata": Jsonb(metadata),
+        },
+    )
 
 
 # --- Job terminal/requeue transitions (lease-fenced) --------------------------------------------

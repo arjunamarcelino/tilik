@@ -31,6 +31,11 @@ def test_sql_constants_are_placeholder_only() -> None:
     sql_constants = {
         "_CLAIM_SQL": repository._CLAIM_SQL,
         "_CLONE_CORPUS_SQL": repository._CLONE_CORPUS_SQL,
+        "_INSERT_EVIDENCE_LINK_SQL": repository._INSERT_EVIDENCE_LINK_SQL,
+        "_UPSERT_CASE_SQL": repository._UPSERT_CASE_SQL,
+        "_RECOMPUTE_CASE_SEVERITY_SQL": repository._RECOMPUTE_CASE_SEVERITY_SQL,
+        "_ATTACH_FINDINGS_SQL": repository._ATTACH_FINDINGS_SQL,
+        "_INSERT_AUDIT_EVENT_SQL": repository._INSERT_AUDIT_EVENT_SQL,
         "_MARK_DONE_SQL": repository._MARK_DONE_SQL,
         "_REQUEUE_SQL": repository._REQUEUE_SQL,
         "_FAIL_SQL": repository._FAIL_SQL,
