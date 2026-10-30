@@ -5,3 +5,6 @@ next-env.d.ts
 
 # build / misc
 *.tsbuildinfo
+
+# Next.js auto-generates this agent-rules file on every `next dev` run.
+AGENTS.md
