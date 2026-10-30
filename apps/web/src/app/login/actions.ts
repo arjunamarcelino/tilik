@@ -37,6 +37,10 @@ export async function login(_prev: LoginState, formData: FormData): Promise<Logi
   if (res.status === 429) {
     return { status: 'error', message: 'Too many attempts — try again in a minute.' };
   }
+  if (res.status >= 500) {
+    // Don't mislabel a server/API fault as a credentials problem (review P3-12).
+    return { status: 'error', message: 'Something went wrong on our end. Please try again.' };
+  }
   if (!res.ok) {
     return { status: 'error', message: 'Invalid credentials.' };
   }
