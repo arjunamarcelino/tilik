@@ -16,7 +16,7 @@ apps/api                      NestJS API (TS)    (Prompt 05 — auth/RBAC/audit 
 apps/web                      Next.js web (TS)   (Prompt 10+)
 packages/shared               shared TS enums/types
 packages/db (@tilik/db)       Prisma schema, migrations, typed client
-services/detector             Python worker      (Prompt 07 — outbox poller + tokenizer; 08 — repeat-billing + cloning detectors) — NOT a workspace package
+services/detector             Python worker      (Prompt 07 — outbox poller + tokenizer; 08 — repeat-billing + cloning; 09 — contradiction detector + Finding→Case aggregation) — NOT a workspace package
 data/synthetic                data generator     (Prompt 04)    — NOT a workspace package
 infra                         Docker Compose + Caddy + env       — NOT a workspace package
 docs                          plans / reviews / solutions        — gitignored (local knowledge)
@@ -87,8 +87,16 @@ test:vectors`). **The whole batch is ONE `$transaction`** — staging + every ep
 - **Detector worker (`services/detector`, Python, Prompt 07) — the outbox consumer.** Python (not a pnpm
   workspace; mirrors `data/synthetic`'s layout — hatchling, exact-pinned deps, per-dir `.venv`, pytest). It
   **consumes** the `DETECT_EPISODE` outbox the import pipeline fills: poll → claim → load episode →
-  `run_detectors(episode, corpus, cfg)` (Prompt 08: REPEAT_BILLING + CLONING; PERTENTANGAN_BUKTI is 09) →
-  write `Finding`s + mark `DONE`. DB access is raw
+  `run_detectors(episode, corpus, cfg)` (Prompt 08: REPEAT_BILLING + CLONING; 09: PERTENTANGAN_BUKTI) →
+  **aggregate** (Prompt 09) + mark `DONE`. The single write tx is now
+  `insert Findings → insert bertentangan EvidenceLinks → upsert the episode's Case (+ recompute its
+severity from the attached findings) → insert a DETECT AuditEvent → mark_done` — all four tables
+  (`Finding`/`EvidenceLink`/`Case`/`AuditEvent`) in ONE lease-fenced tx with `mark_done` LAST, so a
+  preempted worker rolls the whole group back. `AUDIT_ACTION.DETECT` is a cross-service string pinned both
+  sides via `test-vectors/audit-contract.json` (like `DETECT_EPISODE`). **`Case` is two-writer**: the
+  worker owns its _existence_ + derived `severity` (the upsert's `DO UPDATE` deliberately touches only
+  `severity`/`updatedAt`), the API (Prompt 11) owns `status`/`assignedTo`/`summary`/`Decision` — never add
+  a reviewer-owned column to that `DO UPDATE` list. DB access is raw
   **psycopg3** as the **non-owner `tilik_app`** via `APP_DATABASE_URL` (ESLint has no reach here, so a pytest
   **source guard** forbids a bare `DATABASE_URL` key + asserts placeholder-only SQL); it asserts
   `current_user='tilik_app'` at boot/after every reconnect and **never runs migrations**. The claim is ONE
@@ -129,6 +137,18 @@ dedupeKey])` + `ON CONFLICT DO NOTHING` make re-detection safe (no natural key o
   `test-vectors/narrative-format.json` (asserted both sides). scikit-learn + its full closure are exact-pinned.
   Test precision against the **real synthetic manifest** (assert exactly the planted set flags), not just hand
   fixtures. Details: `docs/solutions/integration-issues/detectors-repeat-billing-cloning-tfidf.md`.
+- **Detector 3 (`pertentangan.py`, Prompt 09) — evidence contradiction, pure rule.** A surgical procedure
+  (code in a module-constant set, fixture-coupled to `SURGICAL_PROCEDURES`) billed with **no `mendukung`
+  support**: support absent + a `sumber` anchor present → `HIGH` (+ emits one `bertentangan`
+  `EvidenceLinkDraft`); support present but all captured after `submittedAt` → `MEDIUM` (needs-more-info, **no
+  link** — the doc already `mendukung`-supports the claim, so a `bertentangan` link would self-contradict);
+  support timely → clean; no evidence at all → **abstain** (no anchor; that's REPEAT_BILLING's episode). The
+  `diagnosis→lab` rule is deliberately **not** built (it would false-positive on every diagnosis-without-lab
+  episode). dedupe key is `sha256(canonical_json([claim_no, code]))` (NOT `cv.id` — resubmission-stable).
+  **Writes:** the `bertentangan` relation is hard-coded in `repository.insert_evidence_links` (the detector
+  never writes `sumber`/`mendukung`); `Case.severity` is recomputed from the **persisted** findings (enum
+  `max()` = declaration order), not the drafts. Details:
+  `docs/solutions/integration-issues/detector-contradiction-case-aggregation-prompt09.md`.
 - **Enums have one source of truth.** Values live in `@tilik/shared`, mirrored in `schema.prisma`;
   `packages/db/scripts/check-enum-parity.ts` fails `typecheck` on drift. Use `@tilik/shared` enums at
   DTO/validation/API boundaries, Prisma enums only at the persistence edge.

@@ -1,7 +1,7 @@
 """Detector entrypoint — the single seam the worker calls per episode.
 
-Prompt 08 ships the first two detectors: REPEAT_BILLING (``repeat_billing.py``) and CLONING
-(``cloning.py``). PERTENTANGAN_BUKTI lands in Prompt 09. Each detector is a pure function over the loaded
+Prompt 08 ships REPEAT_BILLING (``repeat_billing.py``) and CLONING (``cloning.py``); Prompt 09 adds
+PERTENTANGAN_BUKTI (``pertentangan.py``, evidence contradiction). Each detector is a pure function over the loaded
 ``Episode`` (+ the injected cross-episode ``corpus`` for cloning) and the runtime ``Config``, so detection is
 unit-testable without a database and deterministic — a retried job over identical input produces identical
 findings (see each detector's dedupe-key discipline).
@@ -19,6 +19,7 @@ from collections.abc import Sequence
 from .cloning import detect_cloning, episode_has_comparable_record
 from .config import Config
 from .models import CloneDoc, Episode, FindingDraft
+from .pertentangan import detect_pertentangan
 from .repeat_billing import detect_repeat_billing
 
 
@@ -34,9 +35,11 @@ def run_detectors(episode: Episode, corpus: Sequence[CloneDoc], cfg: Config) -> 
     """Run every detector for an episode and return the combined findings.
 
     ``corpus`` is the cross-episode medical-record set the CLONING detector compares against (loaded by the
-    worker via ``repository.load_clone_corpus`` when ``needs_corpus`` is true); REPEAT_BILLING ignores it.
+    worker via ``repository.load_clone_corpus`` when ``needs_corpus`` is true); REPEAT_BILLING and
+    PERTENTANGAN_BUKTI are per-episode and ignore it.
     """
     return [
         *detect_repeat_billing(episode, cfg),
         *detect_cloning(episode, corpus, cfg),
+        *detect_pertentangan(episode, cfg),
     ]

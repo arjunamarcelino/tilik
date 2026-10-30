@@ -133,6 +133,22 @@ class CloneDoc(NamedTuple):
     narrative: str
 
 
+class EvidenceLinkDraft(NamedTuple):
+    """A ``bertentangan`` (contradiction) link the PERTENTANGAN_BUKTI detector asks the worker to write,
+    tying the in-tension evidence to the offending claim version. The relation is implicit — ``bertentangan``
+    is the only link a detector ever writes, hard-coded in ``repository.insert_evidence_links`` so a detector
+    can never reach the import pipeline's provenance relations (``mendukung``/``sumber``). The write lives in
+    the repository (the detector stays a pure function).
+
+    ``note`` is ALWAYS a detector-authored constant string, never clinical content: a ``NamedTuple``'s
+    default repr prints every field, so a stray log of a draft would otherwise leak it.
+    """
+
+    evidence_id: str
+    claim_version_id: str | None
+    note: str | None
+
+
 @dataclass(frozen=True)
 class FindingDraft:
     """What a detector emits. Mapped to a ``Finding`` row by ``repository.insert_findings``.
@@ -151,6 +167,10 @@ class FindingDraft:
     frozen first row. ``reasons`` keeps a ``messages`` list of
     human-readable Indonesian triggers plus a structured ``detail`` object; it must never carry narrative
     text or the patient token (it lands in a DB column the redacting ``__repr__`` can't protect).
+
+    ``evidence_links`` is an optional second write target: ``bertentangan`` links the PERTENTANGAN_BUKTI
+    detector asks ``repository.insert_evidence_links`` to write (``insert_findings`` ignores it). Defaulting
+    to the empty tuple keeps the other detectors unchanged; it is immutable (not the mutable-default trap).
     """
 
     detector: DetectorType
@@ -160,6 +180,7 @@ class FindingDraft:
     evidence_refs: list[str]
     dedupe_key: str
     claim_version_id: str | None = None
+    evidence_links: tuple[EvidenceLinkDraft, ...] = ()
 
     def __repr__(self) -> str:  # omit reasons (may carry clinical explanation text)
         return (
