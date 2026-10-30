@@ -24,7 +24,10 @@ loadEnvConfig(resolve(dir, '../..'), process.env.NODE_ENV !== 'production');
 // also carries JWT_SECRET, the owner DATABASE_URL, MinIO + HMAC keys, and SEED_* passwords — none of which
 // the portal uses. Drop every key this load introduced that isn't web-scoped, so those secrets never sit
 // in the (internet-facing) Next process's environment. NEXT_PUBLIC_* stays (NEXT_PUBLIC_API_URL).
-const WEB_ALLOW = new Set(['NEXT_PUBLIC_API_URL', 'WEB_PORT', 'NODE_ENV']);
+// NODE_ENV is deliberately NOT allow-listed: Next owns it (production for `build`/`start`, development for
+// `dev`). The root .env carries NODE_ENV=development (for the API); letting it survive here would force a
+// dev React build during `next build` → a prerender crash. Pruning it hands control back to Next.
+const WEB_ALLOW = new Set(['NEXT_PUBLIC_API_URL', 'WEB_PORT']);
 for (const key of Object.keys(process.env)) {
   if (!ambient.has(key) && !WEB_ALLOW.has(key) && !key.startsWith('NEXT_PUBLIC_')) {
     delete process.env[key];
