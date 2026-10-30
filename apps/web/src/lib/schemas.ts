@@ -3,10 +3,18 @@ import { Role } from '@tilik/shared';
 import type { CaseStats, Me } from '@tilik/shared/contracts';
 
 /**
- * Runtime schemas for the API responses, pinned to the shared contracts via `satisfies z.ZodType<…>` —
- * a schema that drifts from the contract type fails to compile. `schema.parse()` turns silent response
- * drift into a loud failure at the trust boundary (no `as` casts).
+ * All web-side zod schemas in one place. Response schemas are pinned to the shared contracts via
+ * `satisfies z.ZodType<…>` — a schema that drifts from the contract type fails to compile; `schema.parse()`
+ * turns silent response drift into a loud failure at the trust boundary (no `as` casts). Request schemas
+ * (e.g. login) live here too.
  */
+
+// Request — login credentials. Send EXACTLY { email, password }; the API's forbidNonWhitelisted 400s on extras.
+export const LoginCredentialsSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
+});
+
 const count = z.number().int().nonnegative();
 
 export const MeSchema = z.object({

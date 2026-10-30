@@ -1,20 +1,14 @@
 'use server';
 
 import { redirect } from 'next/navigation';
-import { z } from 'zod';
 import { apiBase } from '@/lib/env';
+import { LoginCredentialsSchema } from '@/lib/schemas';
 import { createSession } from '@/lib/session';
 
 export type LoginState = { status: 'idle' } | { status: 'error'; message: string };
 
-// Send EXACTLY { email, password } — the API's forbidNonWhitelisted 400s on extra fields.
-const CredentialsSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(1),
-});
-
 export async function login(_prev: LoginState, formData: FormData): Promise<LoginState> {
-  const parsed = CredentialsSchema.safeParse({
+  const parsed = LoginCredentialsSchema.safeParse({
     email: formData.get('email'),
     password: formData.get('password'),
   });
