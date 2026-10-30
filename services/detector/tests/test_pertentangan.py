@@ -156,6 +156,9 @@ def test_late_support_is_medium() -> None:
     assert len(out) == 1
     assert out[0].severity is Severity.MEDIUM and out[0].score == 0.5
     assert out[0].reasons["detail"]["severityReason"] == "LATE_OR_EXTERNAL_DOC"
+    # The late case is a "needs more info" finding only — it must NOT write a bertentangan link onto a doc
+    # that already `mendukung`-supports the claim (that would be a self-contradictory pair).
+    assert out[0].evidence_links == ()
 
 
 def test_non_surgical_procedure_is_ignored() -> None:

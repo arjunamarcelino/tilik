@@ -3,15 +3,20 @@
 Signal (the generator's ``fraud_contradiction`` family): a surgical/one-time procedure is billed but the
 claim carries NO supporting (``mendukung``) evidence — the mandatory operative + anaesthesia reports are
 absent. The clean surgical case attaches exactly those docs, so presence/absence of ``mendukung`` support
-is the discriminator. On a contradiction the detector emits a Finding AND asks the worker to record a
-``relation='bertentangan'`` EvidenceLink tying the in-tension evidence to the offending claim version
-(the write lives in the repository/worker — this stays a pure function, like the other two detectors).
+is the discriminator. On a HIGH contradiction the detector emits a Finding AND asks the worker to record a
+``relation='bertentangan'`` EvidenceLink tying the source record to the offending claim version (the write
+lives in the repository/worker — this stays a pure function, like the other two detectors).
 
 Severity ladder (grounded in CMS CERT/TPE deny / pend / clear practice):
-  * required support ABSENT                          → HIGH   (``NO_SUPPORTING_DOC``)
+  * required support ABSENT                          → HIGH   (``NO_SUPPORTING_DOC``)  + a ``bertentangan`` link
   * support present but ALL captured AFTER the claim was submitted (administrative lag / external
     referral) → MEDIUM (``LATE_OR_EXTERNAL_DOC``) — a "needs more info" pend, not an outright denial
   * support present and at least one piece timely    → no finding (clean)
+
+Only the HIGH (missing-doc) case records a ``bertentangan`` link: a late-but-present doc legitimately
+SUPPORTS the claim (it already carries a ``mendukung`` link), so also tagging it ``bertentangan`` would
+make one evidence record both support and contradict the same claim — a self-contradictory pair. The late
+case stays a lower-severity "needs more info" finding with no link.
 
 Anchor requirement: a contradiction needs a *source* record to tie the ``bertentangan`` link to. A claim
 billing surgery with ZERO evidence (the repeat-billing family) has nothing to contradict — that is an
@@ -60,8 +65,7 @@ _LATE_SCORE = 0.5  # support present but late/external — needs-more-info, not 
 
 _REASON_MISSING = "NO_SUPPORTING_DOC"
 _REASON_LATE = "LATE_OR_EXTERNAL_DOC"
-_NOTE_MISSING = "bukti tindakan bedah (laporan operasi/anestesi) tidak ditemukan"
-_NOTE_LATE = "bukti pendukung tercatat setelah klaim diajukan (kemungkinan keterlambatan administratif/rujukan)"
+_NOTE_MISSING = "bukti tindakan bedah (laporan operasi/anestesi) tidak ditemukan"  # the one bertentangan-link note
 
 
 def detect_pertentangan(episode: Episode, cfg: Config) -> list[FindingDraft]:
@@ -135,14 +139,21 @@ def _anchor(
 def _build(claim: ClaimVersionView, code: str, anchor: EvidenceView, *, late: bool) -> FindingDraft:
     label = _PROC_LABELS.get(code, code)
     if late:
-        severity, score, reason_code, note = Severity.MEDIUM, _LATE_SCORE, _REASON_LATE, _NOTE_LATE
+        # Support is present but late/external — a lower-severity "needs more info" finding. It emits NO
+        # bertentangan link: the anchor is a doc that already `mendukung`-supports this claim, so tagging it
+        # `bertentangan` too would be a self-contradictory pair (see module docstring).
+        severity, score, reason_code = Severity.MEDIUM, _LATE_SCORE, _REASON_LATE
         message = (
             f"Klaim bedah {code} ({label}): bukti pendukung tercatat setelah klaim diajukan — perlu "
             f"verifikasi (kemungkinan keterlambatan administratif / rujukan eksternal)."
         )
+        links: tuple[EvidenceLinkDraft, ...] = ()
     else:
-        severity, score, reason_code, note = Severity.HIGH, _MISSING_SCORE, _REASON_MISSING, _NOTE_MISSING
+        severity, score, reason_code = Severity.HIGH, _MISSING_SCORE, _REASON_MISSING
         message = f"Klaim bedah {code} ({label}) tanpa bukti tindakan (laporan operasi/anestesi tidak ditemukan)."
+        links = (
+            EvidenceLinkDraft(evidence_id=anchor.id, claim_version_id=claim.id, relation=_REL_CONTRADICT, note=_NOTE_MISSING),
+        )
 
     reasons = {
         "messages": [message],
@@ -162,11 +173,7 @@ def _build(claim: ClaimVersionView, code: str, anchor: EvidenceView, *, late: bo
             json.dumps([claim.claim_no, code], separators=(",", ":"), ensure_ascii=True).encode("utf-8")
         ).hexdigest(),
         claim_version_id=claim.id,
-        evidence_links=(
-            EvidenceLinkDraft(
-                evidence_id=anchor.id, claim_version_id=claim.id, relation=_REL_CONTRADICT, note=note
-            ),
-        ),
+        evidence_links=links,
     )
 
 
