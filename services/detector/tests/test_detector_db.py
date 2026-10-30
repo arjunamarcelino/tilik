@@ -197,3 +197,29 @@ def test_reprocess_is_idempotent_but_audit_appends(conn, contradiction_case, db_
         'SELECT "id" FROM "Case" WHERE "episodeId"=%s', (contradiction_case.episode,)
     ).fetchone()["id"]
     assert case_id_1 == case_id_2  # same stable Case across re-detection
+
+
+def test_redetect_preserves_reviewer_state(conn, contradiction_case, db_dsn) -> None:
+    # The worker and the (future) API both write Case as the same role; only the upsert's DO UPDATE clause
+    # stops re-detection from resetting reviewer-owned workflow fields. Pin that contract: a re-detect must
+    # leave status/assignedTo untouched (it may only refresh the derived severity).
+    cfg = make_config(db_dsn.value)
+    run_once(conn, cfg, test_logger, load_corpus=lambda *_: [])
+
+    conn.execute(
+        'UPDATE "Case" SET "status"=%s, "assignedTo"=%s WHERE "episodeId"=%s',
+        ("IN_REVIEW", "reviewer-x", contradiction_case.episode),
+    )
+    conn.execute(
+        'UPDATE "OutboxJob" SET "status"=\'PENDING\', "lockedBy"=NULL, "lockedAt"=NULL WHERE "id"=%s',
+        (contradiction_case.job,),
+    )
+    run_once(conn, cfg, test_logger, load_corpus=lambda *_: [])
+
+    case = conn.execute(
+        'SELECT "status", "assignedTo", "severity" FROM "Case" WHERE "episodeId"=%s',
+        (contradiction_case.episode,),
+    ).fetchone()
+    assert case["status"] == "IN_REVIEW"  # reviewer workflow state survived re-detection
+    assert case["assignedTo"] == "reviewer-x"
+    assert case["severity"] == "HIGH"  # detector-owned derived field still maintained
