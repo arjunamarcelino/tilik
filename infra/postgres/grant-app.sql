@@ -12,6 +12,12 @@
 --
 -- Keep the REVOKE list below in sync with the init migration's append-only tables.
 
+-- Schema USAGE is a prerequisite for any table access. The Compose init normally grants it, but
+-- `prisma migrate reset` DROPs and recreates schema public (losing it), after which the app hits
+-- "permission denied for schema public". Granting it here makes db:grant self-sufficient after a full
+-- reset too. (USAGE only — never CREATE: the non-owner must not alter the schema.)
+GRANT USAGE ON SCHEMA public TO tilik_app;
+
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO tilik_app;
 -- No sequences today: every PK is an app-generated TEXT id (cuid/uuid), not SERIAL. Kept so a future
 -- autoincrement column grants correctly without editing this file; harmless no-op until then.
