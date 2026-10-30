@@ -322,6 +322,8 @@ INSERT INTO "AuditEvent" ("id", "actor", "action", "targetType", "targetId", "me
 VALUES (%(id)s, %(actor)s, %(action)s, %(targetType)s, %(targetId)s, %(metadata)s)
 """
 
+_FIND_CASE_ID_SQL = 'SELECT "id" FROM "Case" WHERE "episodeId" = %(ep)s'
+
 
 def insert_evidence_links(conn: psycopg.Connection, links: list[EvidenceLinkDraft]) -> None:
     """Insert each ``bertentangan`` link idempotently (WHERE NOT EXISTS). The relation is hard-coded in the
@@ -351,6 +353,13 @@ def upsert_case(conn: psycopg.Connection, episode_id: str, seed_severity: Severi
 def attach_findings_to_case(conn: psycopg.Connection, episode_id: str, case_id: str) -> None:
     """Attach the episode's not-yet-attached findings to the Case (idempotent; also back-fills older ones)."""
     conn.execute(_ATTACH_FINDINGS_SQL, {"cid": case_id, "ep": episode_id})
+
+
+def find_case_id(conn: psycopg.Connection, episode_id: str) -> str | None:
+    """The episode's Case id if one exists (a prior finding-bearing run created it). Lets a finding-less
+    re-detect report the real caseId in its DETECT audit instead of null."""
+    row = conn.execute(_FIND_CASE_ID_SQL, {"ep": episode_id}).fetchone()
+    return row["id"] if row else None
 
 
 def recompute_case_severity(conn: psycopg.Connection, case_id: str) -> None:

@@ -123,6 +123,8 @@ def contradiction_case(conn):
     conn.execute('DELETE FROM "EvidenceLink" WHERE "evidenceId"=%s AND "relation"=%s', (ev, "bertentangan"))
     conn.execute('DELETE FROM "OutboxJob" WHERE "id"=%s', (job,))
     # Append-only spine (episode/claim/line/evidence/sumber-link) persists — unique ids, no count assertions.
+    # The DETECT AuditEvent rows also can't be deleted (append-only; tilik_app has DELETE revoked); they
+    # accumulate harmlessly across runs because every assertion filters on this test's unique episodeId.
 
 
 def _counts(conn, c) -> dict:
@@ -223,3 +225,27 @@ def test_redetect_preserves_reviewer_state(conn, contradiction_case, db_dsn) -> 
     assert case["status"] == "IN_REVIEW"  # reviewer workflow state survived re-detection
     assert case["assignedTo"] == "reviewer-x"
     assert case["severity"] == "HIGH"  # detector-owned derived field still maintained
+
+
+def test_audit_reports_existing_case_on_findingless_reprocess(conn, contradiction_case, db_dsn) -> None:
+    # A finding-less re-detect of an already-flagged episode (e.g. a rule/corpus change) must still report
+    # the episode's existing Case id in the DETECT audit, not null.
+    cfg = make_config(db_dsn.value)
+    run_once(conn, cfg, test_logger, load_corpus=lambda *_: [])
+    case_id = conn.execute(
+        'SELECT "id" FROM "Case" WHERE "episodeId"=%s', (contradiction_case.episode,)
+    ).fetchone()["id"]
+
+    conn.execute(
+        'UPDATE "OutboxJob" SET "status"=\'PENDING\', "lockedBy"=NULL, "lockedAt"=NULL WHERE "id"=%s',
+        (contradiction_case.job,),
+    )
+    run_once(conn, cfg, test_logger, detect=lambda *_: [], load_corpus=lambda *_: [])
+
+    # The finding-less run's audit is the one with empty `findings`; its caseId is the existing Case, not null.
+    meta = conn.execute(
+        "SELECT \"metadata\" FROM \"AuditEvent\" WHERE \"targetId\"=%s AND \"action\"=%s "
+        "AND \"metadata\"->'findings' = '{}'::jsonb",
+        (contradiction_case.episode, "DETECT"),
+    ).fetchone()["metadata"]
+    assert meta["caseId"] == case_id

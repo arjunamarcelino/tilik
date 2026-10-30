@@ -144,6 +144,10 @@ def _aggregate_and_audit(
         case_id = repository.upsert_case(conn, episode_id, drafts[0].severity)
         repository.attach_findings_to_case(conn, episode_id, case_id)
         repository.recompute_case_severity(conn, case_id)
+    else:
+        # No findings this run, but a prior run may have created a Case — report its real id in the audit
+        # (not null) so the timeline for a finding-less re-detect isn't misread as "no case for this episode".
+        case_id = repository.find_case_id(conn, episode_id)
     repository.insert_audit_event(
         conn,
         actor=cfg.worker_id,
