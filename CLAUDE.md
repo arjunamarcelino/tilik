@@ -12,8 +12,8 @@ on Docker Compose. Monorepo via **pnpm workspaces**.
 ## Layout
 
 ```
-apps/api                      NestJS API (TS)    (Prompt 05 — auth/RBAC/audit shell; Prompt 06 — import pipeline)
-apps/web                      Next.js web (TS)   (Prompt 10 — BFF portal: auth/cookie/DAL, role-aware shell, dashboard)
+apps/api                      NestJS API (TS)    (Prompt 05 — auth/RBAC/audit shell; 06 — import pipeline; 11 — cases read API + evidence download)
+apps/web                      Next.js web (TS)   (Prompt 10 — BFF portal: auth/cookie/DAL, role-aware shell, dashboard; 11 — case list/detail review screens)
 packages/shared               shared TS enums/types
 packages/db (@tilik/db)       Prisma schema, migrations, typed client
 services/detector             Python worker      (Prompt 07 — outbox poller + tokenizer; 08 — repeat-billing + cloning; 09 — contradiction detector + Finding→Case aggregation) — NOT a workspace package
@@ -170,6 +170,32 @@ dedupeKey])` + `ON CONFLICT DO NOTHING` make re-detection safe (no natural key o
   hierarchy (`roleSatisfies`) is shared from `@tilik/shared` (API guard + web DAL). Verify hydration/CSP in a
   **browser**, never trust a curl 200. Run it: `pnpm --filter @tilik/web dev`. Details:
   `docs/solutions/integration-issues/nextjs-16-portal-bff-env-csp-prompt10.md`.
+- **Case screens (`apps/api/src/cases` + `apps/web/.../cases`, Prompt 11) — read-only on `Case`.** `GET
+/v1/cases` (filter status/severity/detector; **2 queries** — scalar `findMany` + `finding.groupBy` keyed to
+  the page ids, no N+1/over-fetch; **fixed order** `severity DESC, createdAt DESC, id DESC` with a **mandatory
+  `id` tiebreaker**), `GET /v1/cases/:id` (findings, claims, evidence+integrity, `bertentangan` contradictions,
+  a **dynamic multi-`targetId` audit timeline** — must include `EvidenceRecord` ids or the tamper event is
+  invisible), and case-scoped `GET /v1/cases/:caseId/evidence/:evidenceId/download`. `CasesModule` **writes
+  only `AuditEvent`** (two-writer `Case` holds). **VIEW_CASE** is a standalone `AuditService.record()` on the
+  GET (interceptor skips GETs) — written on **every** detail read; never gate it on a client header (a
+  spoofable `x-tilik-prefetch` was a review bug). **Evidence integrity** (shared `EvidenceIntegrityService`,
+  no cache — verify live): compare `sha256(object bytes)` to the **append-only DB `contentHash`**, NOT the
+  object's `x-amz-meta-sha256`; file-backed `contentHash` IS the raw-bytes hash; **payload-backed →
+  `display_only`** (its hash is over a `{kind,source,capturedAt,payload}` wrapper whose `capturedAt`
+  round-trip false-mismatches); honor `hashAlgo`. **Download** is case-scoped (assert `evidence.episodeId ===
+case.episodeId`, 404 cross-case; `@Roles(REVIEWER)` — the guard **fails open**), **verify-before-stream**
+  (tamper → `EVIDENCE_INTEGRITY_FAILED` audit + 409 before the first byte, `StreamableFile` after), with
+  `nosniff` + a `default-src 'none'; sandbox` resource CSP; the web route handler is **excluded from
+  `proxy.ts`'s matcher**. The API returns a `download: { isImage } | null` **descriptor** (never a portal
+  URL — the web builds the href). Mapping: Prisma enum → shared enum via the cast-free **`Enum[value]`
+  index**; timestamps as **ISO strings** (`.toISOString()`, web `z.string().datetime()` — never `z.date()`);
+  `Decimal.toFixed(2)`; detector `reasons` **parsed defensively** (not `fromJsonValue`); **validate**
+  `EvidenceLink.relation` (don't `as`-cast — a bad value 500s the detail page via the web `z.enum`). Two
+  additive indexes shipped (`Case [severity,createdAt,id]`, `AuditEvent [targetId,action,createdAt]`) via
+  `migrate dev --create-only` → review SQL → `migrate:deploy` (never reset) → `db:grant`. **Data gap:** all
+  seeded fraud cases are payload-backed, so the verified-file/409 download path is unreachable from the UI
+  (file evidence sits on clean episodes — Prompt 04 follow-up). Details:
+  `docs/solutions/integration-issues/case-list-detail-evidence-download-prompt11.md`.
 - **Enums have one source of truth.** Values live in `@tilik/shared`, mirrored in `schema.prisma`;
   `packages/db/scripts/check-enum-parity.ts` fails `typecheck` on drift. Use `@tilik/shared` enums at
   DTO/validation/API boundaries, Prisma enums only at the persistence edge.
