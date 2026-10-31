@@ -200,7 +200,7 @@ export class CasesService {
         },
         // Folded into the authz read — one fewer round-trip than a parallel branch (it's a single 0..1 row).
         decision: {
-          select: { verdict: true, rationale: true, decidedBy: true, decidedAt: true },
+          select: { verdict: true, rationale: true, decidedAt: true },
         },
       },
     });
@@ -317,12 +317,7 @@ export class CasesService {
       { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
     );
 
-    return toDecisionDTO({
-      verdict: dto.verdict,
-      rationale: dto.rationale,
-      decidedBy: actor.userId,
-      decidedAt,
-    });
+    return toDecisionDTO({ verdict: dto.verdict, rationale: dto.rationale, decidedAt });
   }
 
   /** Best-effort VIEW_CASE access-log write. A read must not fail because its audit insert did — log and
@@ -471,22 +466,17 @@ function verdictToStatus(verdict: `${Verdict}`): PrismaCaseStatus {
   }
 }
 
-// Role-scoped actor label — never the raw reviewer email (consistent with toAuditDTO). A short id prefix
-// distinguishes decisions by different reviewers without surfacing an identifier.
-function labelReviewer(userId: string): string {
-  return `Reviewer · ${userId.slice(0, 8)}`;
-}
-
 function toDecisionDTO(d: {
   verdict: `${Verdict}`;
   rationale: string;
-  decidedBy: string;
   decidedAt: Date;
 }): CaseDecision {
   return {
     verdict: Verdict[d.verdict],
     rationale: d.rationale,
-    decidedByLabel: labelReviewer(d.decidedBy),
+    // Role-scoped label, never a reviewer identifier — matches the timeline's actor labels (toAuditDTO).
+    // decidedBy is stored on the Decision row for accountability but is NOT surfaced to the portal.
+    decidedByLabel: 'Reviewer',
     decidedAt: d.decidedAt.toISOString(),
   };
 }
