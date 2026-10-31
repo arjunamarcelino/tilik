@@ -174,8 +174,9 @@ export class SummaryService {
 
     // Success: cache + audit atomically. updateMany (not update) returns a rowcount instead of raising
     // P2025 if the case vanished mid-stream — so no Postgres error is ever raised inside this interactive tx.
+    let persistedCount = -1;
     try {
-      await this.prisma.$transaction(
+      persistedCount = await this.prisma.$transaction(
         async (tx) => {
           const { count } = await tx.case.updateMany({
             where: { id },
@@ -197,8 +198,9 @@ export class SummaryService {
               },
             });
           }
-          // count === 0 → the case was deleted between gather and persist; nothing to cache. Handled outside
-          // the tx (below) so no error is raised inside it.
+          // count === 0 → the case was deleted between gather and persist; nothing to cache. Audited after
+          // the tx (below) via the returned count, so no error is raised inside the interactive tx.
+          return count;
         },
         { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
       );
@@ -207,6 +209,12 @@ export class SummaryService {
       // though the cache write was lost, so it isn't invisible.
       await this.recordAttempt(id, actor, 'persist_failed');
       this.logError('summary persist failed after a successful stream', id, err);
+    }
+
+    // count === 0 → the case vanished between gather and persist (unreachable today: the detector only upserts
+    // Cases and the API has no delete path). The prompt still egressed to Claude, so trace it best-effort.
+    if (persistedCount === 0) {
+      await this.recordAttempt(id, actor, 'case_vanished');
     }
 
     if (!headersSent) {
