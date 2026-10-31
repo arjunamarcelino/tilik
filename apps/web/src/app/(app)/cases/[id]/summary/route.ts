@@ -1,5 +1,5 @@
 import { cookies } from 'next/headers';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 import { SESSION_COOKIE } from '@/lib/constants';
 import { apiBase } from '@/lib/env';
 
@@ -16,6 +16,9 @@ export const dynamic = 'force-dynamic';
  * cookie-authenticated POST Route Handler has none — so this adds a Sec-Fetch-Site same-origin check as
  * defence-in-depth over the session cookie's SameSite=lax. Excluded from proxy.ts's matcher (no HTML CSP /
  * buffering on a streamed text body).
+ *
+ * Auth failures return a 401 STATUS (not redirect()): this answers the client's fetch(), so a 3xx would be
+ * followed by a re-POST rather than a navigation. The client maps 401 → a full-page navigation to /logout.
  */
 export async function POST(
   req: Request,
@@ -28,7 +31,7 @@ export async function POST(
   if (site && site !== 'same-origin') return new Response('Forbidden', { status: 403 });
 
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
-  if (!token) redirect('/login');
+  if (!token) return new Response('Unauthorized', { status: 401 });
 
   const body = await req.text(); // { regenerate?: boolean }
 
@@ -44,7 +47,7 @@ export async function POST(
     return new Response('The API is unreachable.', { status: 502 });
   }
 
-  if (upstream.status === 401) redirect('/logout');
+  if (upstream.status === 401) return new Response('Unauthorized', { status: 401 });
   if (upstream.status === 403) return new Response('Forbidden', { status: 403 });
   if (upstream.status === 404) notFound();
   if (upstream.status === 429) return new Response('Too many requests', { status: 429 });

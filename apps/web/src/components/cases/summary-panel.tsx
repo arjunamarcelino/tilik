@@ -78,6 +78,12 @@ export function SummaryPanel({
         body: JSON.stringify({ regenerate }),
         signal: ac.signal,
       });
+      if (res.status === 401) {
+        // Session expired/invalid — full navigation so /logout can clear the cookie and bounce to /login
+        // (a fetch can't follow a redirect into a navigation).
+        window.location.assign('/logout');
+        return;
+      }
       if (!res.ok || !res.body) {
         setStatus('error');
         setError(
