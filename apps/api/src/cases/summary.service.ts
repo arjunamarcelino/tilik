@@ -288,7 +288,7 @@ function buildGroundingContext(
     evidenceIds.add(e.id);
     const fileBacked = e.objectKey !== null;
     const body = fileBacked
-      ? `[berkas] nama=${basename(e.objectKey)} jenis=${e.kind} direkam=${e.capturedAt.toISOString()}`
+      ? `[berkas] nama=${scrubContent(basename(e.objectKey), nonce)} jenis=${e.kind} direkam=${e.capturedAt.toISOString()}`
       : scrubContent(JSON.stringify(scrubPayload(e.payload)).slice(0, MAX_PAYLOAD_CHARS), nonce);
     return `${open(e.id)}\n${body}\n${close}`;
   });
@@ -303,10 +303,10 @@ function buildGroundingContext(
     const lines = cv.lines
       .map(
         (l: ClaimLine) =>
-          `${l.type}:${l.code}${l.description ? ` (${scrubContent(l.description, nonce)})` : ''}`,
+          `${l.type}:${scrubContent(l.code, nonce)}${l.description ? ` (${scrubContent(l.description, nonce)})` : ''}`,
       )
       .join(', ');
-    return `- Klaim ${cv.claimNo} v${cv.version} INACBG=${cv.inacbgCode} jumlah=${cv.amount.toFixed(2)} status=${cv.status}${cv.isCurrent ? ' [terkini]' : ''} baris: ${lines || '(tidak ada)'}`;
+    return `- Klaim ${scrubContent(cv.claimNo, nonce)} v${cv.version} INACBG=${scrubContent(cv.inacbgCode, nonce)} jumlah=${cv.amount.toFixed(2)} status=${cv.status}${cv.isCurrent ? ' [terkini]' : ''} baris: ${lines || '(tidak ada)'}`;
   });
 
   const contradictionLines = links
@@ -352,8 +352,11 @@ function scrubPayload(payload: unknown): unknown {
   return out;
 }
 
-/** Neutralise anything that could break out of an <evidence> fence: angle brackets, the close-token, and the
- * per-request nonce. The model then cannot be steered by content that forges a delimiter. */
+/** Neutralise anything that could break out of ANY prompt delimiter (the nonce-fenced <evidence> blocks AND
+ * the static <claims>/<detector_findings>/<contradictions> section tags): strip angle brackets, the
+ * close-token, and the per-request nonce. Applied to EVERY free-form interpolated value (evidence payloads,
+ * claimNo/inacbgCode/line codes, finding reasons, notes, file names), so importer-influenceable content can
+ * never forge a tag the model would treat as an instruction boundary. */
 function scrubContent(text: string, nonce: string): string {
   return text
     .replace(/[<>]/g, ' ')
