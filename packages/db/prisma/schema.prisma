@@ -265,7 +265,10 @@ model AuditEvent {
   metadata   Json?
   createdAt  DateTime @default(now())
 
-  @@index([targetId])
+  // Composite (targetId-leading) so it serves both the targetId-IN core-timeline lookup AND the
+  // VIEW_CASE branch (targetId = case, action = VIEW_CASE, order createdAt DESC) as an index-ordered
+  // range scan that the `take` can short-circuit, instead of scanning+sorting all of a case's rows.
+  @@index([targetId, action, createdAt(sort: Desc)])
 }
 
 /// Transactional outbox. Intentionally MUTABLE (status/attempts/lockedBy change by design) — no trigger.
