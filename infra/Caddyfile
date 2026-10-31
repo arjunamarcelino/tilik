@@ -5,8 +5,21 @@
 # Env placeholders ({$VAR:default}) are substituted at Caddy startup.
 {$TILIK_DOMAIN:localhost} {
 	# API first — `handle /v1/*` keeps the /v1 prefix (use handle_path only to strip it).
+	# flush_interval -1 disables response buffering so the evidence-summary token stream (Prompt 13,
+	# text/plain) reaches the web BFF incrementally — Caddy auto-flushes text/event-stream but NOT
+	# text/plain. Harmless for the small JSON + content-length binary responses this block also serves.
 	handle /v1/* {
-		reverse_proxy api:{$API_PORT:3001}
+		reverse_proxy api:{$API_PORT:3001} {
+			flush_interval -1
+		}
+	}
+
+	# The BFF relay for the summary stream must also reach the browser unbuffered (browser -> web hop).
+	@summary path_regexp summary ^/cases/[^/]+/summary$
+	handle @summary {
+		reverse_proxy web:{$WEB_PORT:3000} {
+			flush_interval -1
+		}
 	}
 
 	# Everything else -> web.
