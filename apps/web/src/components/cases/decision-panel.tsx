@@ -54,6 +54,7 @@ export function DecisionPanel({
   const headingRef = useRef<HTMLHeadingElement>(null);
   const recordRef = useRef<HTMLButtonElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
+  const generalErrorRef = useRef<HTMLParagraphElement>(null);
   const wasDecided = useRef(decision !== null);
 
   // On the undecided→decided transition (after the action revalidates), move focus to the locked heading —
@@ -69,6 +70,11 @@ export function DecisionPanel({
   }, [confirming]);
   useEffect(() => {
     if (state.kind === 'error') setConfirming(false);
+  }, [state]);
+  // A server error collapses the confirm step, unmounting the focused confirm button → focus would fall to
+  // <body>. Move it to the error message so a keyboard/SR user keeps their place.
+  useEffect(() => {
+    if (state.kind === 'error' && !state.fieldErrors) generalErrorRef.current?.focus();
   }, [state]);
 
   if (decision) {
@@ -210,7 +216,12 @@ export function DecisionPanel({
         </div>
 
         {generalError && (
-          <p role="alert" className="rounded-md bg-sev-high-bg px-3 py-2 text-sm text-sev-high">
+          <p
+            ref={generalErrorRef}
+            tabIndex={-1}
+            role="alert"
+            className="rounded-md bg-sev-high-bg px-3 py-2 text-sm text-sev-high focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"
+          >
             {generalError}
           </p>
         )}
