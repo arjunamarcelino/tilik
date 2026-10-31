@@ -7,9 +7,12 @@ import {
   EvidenceKind,
   Role,
   Severity,
+  Verdict,
 } from '@tilik/shared';
+import { MAX_RATIONALE_LENGTH } from '@tilik/shared/constants';
 import type {
   AuditEventDTO,
+  CaseDecision,
   CaseDetail,
   CaseListItem,
   CaseListResponse,
@@ -35,6 +38,13 @@ import type {
 export const LoginCredentialsSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
+});
+
+// Request — a case decision. Mirrors the API's DecideCaseDto (trim-then-non-empty, bounded). The decision
+// Server Action validates with this before forwarding, so an empty verdict/rationale never leaves the portal.
+export const DecideRequestSchema = z.object({
+  verdict: z.nativeEnum(Verdict),
+  rationale: z.string().trim().min(1).max(MAX_RATIONALE_LENGTH),
 });
 
 const count = z.number().int().nonnegative();
@@ -153,6 +163,13 @@ const AuditEventSchema = z.object({
   at: isoDate,
 }) satisfies z.ZodType<AuditEventDTO>;
 
+const CaseDecisionSchema = z.object({
+  verdict: z.nativeEnum(Verdict),
+  rationale: z.string(),
+  decidedByLabel: z.string(),
+  decidedAt: isoDate,
+}) satisfies z.ZodType<CaseDecision>;
+
 export const CaseDetailSchema = z.object({
   id: z.string().min(1),
   episodeId: z.string().min(1),
@@ -169,4 +186,5 @@ export const CaseDetailSchema = z.object({
   evidence: z.array(EvidenceRecordSchema),
   evidenceLinks: z.array(EvidenceLinkSchema),
   timeline: z.array(AuditEventSchema),
+  decision: CaseDecisionSchema.nullable(),
 }) satisfies z.ZodType<CaseDetail>;

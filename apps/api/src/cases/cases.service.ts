@@ -17,9 +17,11 @@ import {
   DetectorType,
   EvidenceKind,
   Severity,
+  Verdict,
 } from '@tilik/shared';
 import type {
   AuditEventDTO,
+  CaseDecision,
   CaseDetail,
   CaseListItem,
   CaseListResponse,
@@ -35,6 +37,7 @@ import { AuditService } from '../audit/audit.service';
 import { mapWithConcurrency } from '../common/concurrency';
 import type { AuthenticatedUser } from '../common/types/auth';
 import { PrismaService } from '../prisma/prisma.service';
+import type { DecideCaseDto } from './dto/decide-case.dto';
 import type { ListCasesQuery } from './dto/list-cases.query';
 import { EvidenceIntegrityService } from './evidence-integrity.service';
 import { parseReasons } from './finding-json';
@@ -46,6 +49,9 @@ const ACTION_VIEW_CASE = 'VIEW_CASE';
 const ACTION_DETECT = 'DETECT';
 // A detected content-hash mismatch on download — the product's core tamper event (API-only, inline literal).
 const ACTION_EVIDENCE_INTEGRITY_FAILED = 'EVIDENCE_INTEGRITY_FAILED';
+// A reviewer's verdict on a case (Prompt 12). API-only (the detector never decides), so inline — not a
+// cross-service @tilik/shared/constants action.
+const ACTION_DECIDE = 'DECIDE';
 
 // Served content types, keyed by the object-key extension — never a client-declared MIME.
 const CONTENT_TYPE: Record<string, string> = { png: 'image/png', pdf: 'application/pdf' };
@@ -192,6 +198,10 @@ export class CasesService {
         episode: {
           select: { id: true, patientToken: true, facilityId: true, importBatchId: true },
         },
+        // Folded into the authz read — one fewer round-trip than a parallel branch (it's a single 0..1 row).
+        decision: {
+          select: { verdict: true, rationale: true, decidedAt: true },
+        },
       },
     });
     if (!base) throw new NotFoundException({ code: 'CASE_NOT_FOUND' });
@@ -245,7 +255,75 @@ export class CasesService {
       evidence: evidenceDtos,
       evidenceLinks: links.map(toEvidenceLinkDTO).filter((l): l is EvidenceLinkDTO => l !== null),
       timeline,
+      decision: base.decision ? toDecisionDTO(base.decision) : null,
     };
+  }
+
+  /**
+   * Record the reviewer's verdict on a case — the first reviewer-owned write on Case (Prompt 12). ONE
+   * transaction: insert the Decision, transition Case.status to the verdict's lifecycle status (+ claim
+   * assignedTo if unassigned), and record the DECIDE audit atomically (recordInTx, no @Audit). Decide-once
+   * is a DB invariant (Decision.caseId is unique); a second decision → 409 CASE_ALREADY_DECIDED.
+   *
+   * Two-writer Case: this writes status/assignedTo (reviewer-owned) only — NEVER severity/existence, which
+   * are detector-owned. The DB can't enforce that (both callers are tilik_app), and apps/api has no unit-test
+   * harness yet, so the guard today is code review + the end-to-end verification; an automated
+   * severity-not-written regression test is a follow-up.
+   */
+  async decide(id: string, actor: AuthenticatedUser, dto: DecideCaseDto): Promise<CaseDecision> {
+    const kase = await this.prisma.case.findUnique({
+      where: { id },
+      select: { id: true, status: true, assignedTo: true, decision: { select: { id: true } } },
+    });
+    if (!kase) throw new NotFoundException({ code: 'CASE_NOT_FOUND' });
+    if (kase.decision) throw new ConflictException({ code: 'CASE_ALREADY_DECIDED' });
+
+    // priorStatus and the assign-if-unassigned test are pre-transaction reads. That's correct today because no
+    // concurrent writer mutates Case.status/assignedTo (the detector touches only severity/updatedAt); if one
+    // ever does, these become stale-read-based. The in-tx count===0 (below) is the real decide-once guard — the
+    // kase.decision pre-check above is only a friendly fast-path. Impact of a stale priorStatus is limited to
+    // audit-metadata accuracy (toAuditDTO never egresses metadata).
+    const priorStatus = kase.status;
+    const newStatus = verdictToStatus(dto.verdict);
+    const decidedAt = new Date();
+
+    await this.prisma.$transaction(
+      async (tx) => {
+        // ON CONFLICT ("caseId") DO NOTHING — the decide-once guard. createMany + skipDuplicates compiles to
+        // a conflict-free INSERT, so a racing second decision returns count 0 WITHOUT Postgres raising a
+        // unique violation inside this interactive tx. (A plain create() would raise P2002 in-tx and corrupt
+        // the request-shared pg-adapter client — prisma/orm#30374.) The count-0 throw is a clean JS rollback.
+        const { count } = await tx.decision.createMany({
+          data: {
+            caseId: id,
+            verdict: dto.verdict,
+            rationale: dto.rationale,
+            decidedBy: actor.userId,
+            decidedAt,
+          },
+          skipDuplicates: true,
+        });
+        if (count === 0) throw new ConflictException({ code: 'CASE_ALREADY_DECIDED' });
+
+        await tx.case.update({
+          where: { id },
+          // Reviewer-owned columns only. @updatedAt bumps automatically; severity is left untouched.
+          data: { status: newStatus, ...(kase.assignedTo ? {} : { assignedTo: actor.userId }) },
+        });
+
+        await this.audit.recordInTx(tx, {
+          actor: actor.userId,
+          action: ACTION_DECIDE,
+          targetType: 'Case',
+          targetId: id,
+          // Bounded (rationale is @MaxLength(2000)) and never egressed to the portal (toAuditDTO drops metadata).
+          metadata: { verdict: dto.verdict, priorStatus, newStatus, rationale: dto.rationale },
+        });
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
+    );
+
+    return toDecisionDTO({ verdict: dto.verdict, rationale: dto.rationale, decidedAt });
   }
 
   /** Best-effort VIEW_CASE access-log write. A read must not fail because its audit insert did — log and
@@ -371,6 +449,47 @@ export class CasesService {
 }
 
 // ── Row → DTO mappers (module-level; Prisma enum → shared enum via the cast-free `Enum[value]` index) ──
+
+/**
+ * Verdict → the lifecycle status the case lands in. CaseStatus is deliberately kept as lifecycle (distinct
+ * from the adjudication outcome, which lives on Decision.verdict), so this maps onto the EXISTING enum
+ * rather than adding CONFIRMED/REJECTED values (no migration). Returns the Prisma enum so it's assignable to
+ * the update input without the shared↔Prisma nominal bridge. Exhaustive (the `never` default fails to
+ * compile if a Verdict member is added).
+ */
+function verdictToStatus(verdict: `${Verdict}`): PrismaCaseStatus {
+  switch (verdict) {
+    case 'CONFIRMED_FRAUD':
+      return PrismaCaseStatus.ESCALATED; // confirmed fraud → needs downstream action
+    case 'NOT_FRAUD':
+      return PrismaCaseStatus.CLOSED; // cleared
+    case 'NEEDS_MORE_INFO':
+      // Parked / inconclusive. NOTE (intentional): all three verdicts are terminal — NEEDS_MORE_INFO still
+      // writes the one, immutable Decision and locks the case, so it cannot later be re-decided as
+      // CONFIRMED_FRAUD/NOT_FRAUD. This is a deliberate product choice (uniform decide-once). If "needs more
+      // info" should ever be revisitable, it must become a status-only transition that writes no Decision.
+      return PrismaCaseStatus.PENDING;
+    default: {
+      const exhaustive: never = verdict;
+      return exhaustive;
+    }
+  }
+}
+
+function toDecisionDTO(d: {
+  verdict: `${Verdict}`;
+  rationale: string;
+  decidedAt: Date;
+}): CaseDecision {
+  return {
+    verdict: Verdict[d.verdict],
+    rationale: d.rationale,
+    // Role-scoped label, never a reviewer identifier — matches the timeline's actor labels (toAuditDTO).
+    // decidedBy is stored on the Decision row for accountability but is NOT surfaced to the portal.
+    decidedByLabel: 'Reviewer',
+    decidedAt: d.decidedAt.toISOString(),
+  };
+}
 
 function toFindingDTO(f: Finding): FindingDTO {
   return {

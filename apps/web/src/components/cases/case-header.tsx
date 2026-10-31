@@ -1,7 +1,8 @@
 import type { CaseDetail } from '@tilik/shared/contracts';
-import { SeverityBadge, StatusBadge } from '../ui/badge';
+import { SeverityBadge, StatusBadge, VerdictBadge } from '../ui/badge';
+import { DecisionPanel } from './decision-panel';
 
-/** Case detail header: id, severity, status, provenance, and a placeholder for Prompt 12's decision. */
+/** Case detail header: id, severity, status, provenance, and the reviewer's decision (Prompt 12). */
 export function CaseHeader({ kase }: { kase: CaseDetail }) {
   return (
     <div className="flex flex-col gap-3">
@@ -15,6 +16,9 @@ export function CaseHeader({ kase }: { kase: CaseDetail }) {
         </h1>
         <SeverityBadge severity={kase.severity} />
         <StatusBadge status={kase.status} />
+        {/* The status is the lifecycle (escalated/closed/pending); the verdict badge is the authoritative
+            outcome — essential so a decided NEEDS_MORE_INFO ("Pending") isn't misread as still actionable. */}
+        {kase.decision && <VerdictBadge verdict={kase.decision.verdict} />}
       </div>
 
       <dl className="flex flex-wrap gap-x-8 gap-y-1 text-sm text-muted">
@@ -34,9 +38,7 @@ export function CaseHeader({ kase }: { kase: CaseDetail }) {
         </div>
       </dl>
 
-      <div className="rounded-md border border-dashed border-border bg-canvas px-3 py-2 text-xs text-muted">
-        Decision actions (confirm / reject / escalate) land in Prompt 12.
-      </div>
+      <DecisionPanel caseId={kase.id} decision={kase.decision} />
     </div>
   );
 }

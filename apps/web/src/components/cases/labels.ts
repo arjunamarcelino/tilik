@@ -1,4 +1,4 @@
-import { CaseStatus, DetectorType, Severity } from '@tilik/shared';
+import { CaseStatus, DetectorType, Severity, Verdict } from '@tilik/shared';
 
 /**
  * Human labels for the case enums. Pure data (no JSX, no 'use client'), so both server components
@@ -23,4 +23,12 @@ export const DETECTOR_LABEL: Record<DetectorType, string> = {
   [DetectorType.REPEAT_BILLING]: 'Repeat billing',
   [DetectorType.CLONING]: 'Cloning',
   [DetectorType.PERTENTANGAN_BUKTI]: 'Contradiction',
+};
+
+// The reviewer's verdict (Prompt 12). The outcome lives here — Case.status is the lifecycle it lands in
+// (ESCALATED/CLOSED/PENDING), so the verdict badge is the authoritative "confirmed fraud / not fraud" label.
+export const VERDICT_LABEL: Record<Verdict, string> = {
+  [Verdict.CONFIRMED_FRAUD]: 'Confirmed fraud',
+  [Verdict.NOT_FRAUD]: 'Not fraud',
+  [Verdict.NEEDS_MORE_INFO]: 'Needs more info',
 };

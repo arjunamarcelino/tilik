@@ -6,8 +6,9 @@
  * blue = interactive/links/focus, ink = text.
  */
 @theme {
-  --color-brand-green: #00a050; /* primary action fill; white label (6.1:1) */
-  --color-brand-green-700: #007a3d; /* darker green for hover / normal-size labels (~5:1) */
+  --color-brand-green: #00a050; /* action fill behind large/bold labels; white text is 3.42:1 (fails AA at 14px) */
+  --color-brand-green-700: #007a3d; /* green for white text on buttons (~5:1, AA) */
+  --color-brand-green-800: #00592d; /* button HOVER under white text — stays ≥7:1 AA (never lighten to #00a050) */
   --color-brand-navy: #204080; /* chrome: top bar, active nav (white text 9.97:1) */
   --color-brand-blue: #1878c6; /* links (underline), focus ring (4.62:1) */
   --color-brand-ink: #0c2340; /* primary text (15.79:1 on white) */
@@ -27,6 +28,11 @@
   --color-sev-med-bg: #fcf1e3;
   --color-sev-high: #b4291a;
   --color-sev-high-bg: #fbe9e6;
+
+  /* Positive/"cleared" tone (the NOT_FRAUD verdict badge). Green as TEXT needs the dark shade: #007a3d on
+     the light-green bg is 4.82:1 (AA); the brand-green fill (#00a050) is text-unsafe, so it isn't used here. */
+  --color-ok: #007a3d;
+  --color-ok-bg: #e4f5ec;
 
   /* "Mono for evidence, sans for language." No Google-font fetch at build — system stacks keep the
      build offline-safe; ui-monospace preserves the data/evidence distinction. */

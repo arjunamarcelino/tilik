@@ -42,3 +42,13 @@ REVOKE DELETE, TRUNCATE ON "ClaimVersion" FROM tilik_app;
 -- they are the submission + provenance anchors, so DELETE/TRUNCATE are withheld: the app must never be
 -- able to erase what was submitted or which batch minted a row. (No append-only trigger on them.)
 REVOKE DELETE, TRUNCATE ON "StagingRecord", "ImportBatch" FROM tilik_app;
+
+-- Prompt 12: Decision is a decided-ONCE, immutable record (one per Case, enforced by the unique caseId).
+-- The reviewer's verdict must be as tamper-resistant to the app as an audit row, so tilik_app keeps
+-- SELECT/INSERT (the decide path inserts once; detail reads it) but is REVOKEd UPDATE/DELETE/TRUNCATE. This
+-- is grant-level immutability for the non-owner (like StagingRecord/ImportBatch) — not owner-proof: there is
+-- no ENABLE ALWAYS trigger, so this is NOT the full append-only spine (AuditEvent/EvidenceRecord/ClaimLine).
+-- DEPLOY NOTE: the decision feature ships NO migration, so the usual "run db:grant after every migrate" trigger
+-- does NOT fire. A deploy of the decision code alone leaves Decision mutable for tilik_app until db:grant is
+-- re-run — run it explicitly when deploying this change, or the advertised immutability is unenforced.
+REVOKE UPDATE, DELETE, TRUNCATE ON "Decision" FROM tilik_app;

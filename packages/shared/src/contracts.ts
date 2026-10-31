@@ -15,6 +15,7 @@ import type {
   EvidenceKind,
   Role,
   Severity,
+  Verdict,
 } from './enums';
 
 /**
@@ -172,6 +173,19 @@ export interface AuditEventDTO {
   at: IsoDateString;
 }
 
+/**
+ * The reviewer's recorded verdict on a case (Prompt 12). Exactly one per case (`Decision.caseId` is
+ * unique), immutable once written. The `status` the case lands in is derived from `verdict` and lives on
+ * `CaseDetail.status` — it is NOT duplicated here. `decidedByLabel` is a role-scoped label ("Reviewer · …"),
+ * never a raw reviewer id/email (consistent with the timeline's actor labels).
+ */
+export interface CaseDecision {
+  verdict: Verdict;
+  rationale: string;
+  decidedByLabel: string;
+  decidedAt: IsoDateString;
+}
+
 /** `GET /v1/cases/:id` — the full review surface for one case. */
 export interface CaseDetail {
   id: string;
@@ -192,4 +206,6 @@ export interface CaseDetail {
   evidenceLinks: EvidenceLinkDTO[];
   /** Chronological audit trail (import → detect → views), actor-labelled. */
   timeline: AuditEventDTO[];
+  /** The reviewer's verdict, or null if undecided. Present ⇒ the decision panel is locked (read-only). */
+  decision: CaseDecision | null;
 }

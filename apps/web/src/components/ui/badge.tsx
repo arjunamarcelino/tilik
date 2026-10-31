@@ -1,7 +1,7 @@
-import { CaseStatus, DetectorType, Severity } from '@tilik/shared';
-import { DETECTOR_LABEL, SEVERITY_LABEL, STATUS_LABEL } from '../cases/labels';
+import { CaseStatus, DetectorType, Severity, Verdict } from '@tilik/shared';
+import { DETECTOR_LABEL, SEVERITY_LABEL, STATUS_LABEL, VERDICT_LABEL } from '../cases/labels';
 
-type Tone = 'low' | 'med' | 'high' | 'neutral' | 'info';
+type Tone = 'low' | 'med' | 'high' | 'neutral' | 'info' | 'good';
 
 // Each tone pairs a fill/background with its own foreground — AA both ways (see globals.css severity ramp).
 const TONE: Record<Tone, string> = {
@@ -10,6 +10,7 @@ const TONE: Record<Tone, string> = {
   high: 'bg-sev-high-bg text-sev-high',
   neutral: 'border border-border bg-canvas text-brand-ink/80',
   info: 'bg-brand-navy/10 text-brand-navy',
+  good: 'bg-ok-bg text-ok',
 };
 
 /** Small label pill. Always carries text — color is never the only signal (globals.css rule). */
@@ -38,4 +39,15 @@ export function StatusBadge({ status }: { status: CaseStatus }) {
 
 export function DetectorBadge({ detector }: { detector: DetectorType }) {
   return <Badge tone="info">{DETECTOR_LABEL[detector]}</Badge>;
+}
+
+// The reviewer's verdict: confirmed fraud (red) / not fraud (green) / needs more info (amber). This is the
+// authoritative outcome — Case.status only shows the lifecycle (escalated/closed/pending) it lands in.
+const VERDICT_TONE: Record<Verdict, Tone> = {
+  [Verdict.CONFIRMED_FRAUD]: 'high',
+  [Verdict.NOT_FRAUD]: 'good',
+  [Verdict.NEEDS_MORE_INFO]: 'med',
+};
+export function VerdictBadge({ verdict }: { verdict: Verdict }) {
+  return <Badge tone={VERDICT_TONE[verdict]}>{VERDICT_LABEL[verdict]}</Badge>;
 }
