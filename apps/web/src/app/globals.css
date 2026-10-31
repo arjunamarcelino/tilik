@@ -1,0 +1,55 @@
+@import 'tailwindcss';
+
+/*
+ * Tilik design tokens. BPJS brand + a cool, navy-tinted neutral ramp + an AA-verified ordinal severity
+ * ramp. One color, one job: green = action FILL only (never text — 3.42:1 fails AA), navy = chrome,
+ * blue = interactive/links/focus, ink = text.
+ */
+@theme {
+  --color-brand-green: #00a050; /* primary action fill; white label (6.1:1) */
+  --color-brand-green-700: #007a3d; /* darker green for hover / normal-size labels (~5:1) */
+  --color-brand-navy: #204080; /* chrome: top bar, active nav (white text 9.97:1) */
+  --color-brand-blue: #1878c6; /* links (underline), focus ring (4.62:1) */
+  --color-brand-ink: #0c2340; /* primary text (15.79:1 on white) */
+
+  --color-canvas: #f5f7fb;
+  --color-surface: #ffffff;
+  --color-raised: #fbfcfe;
+  --color-border: #e3e8f0;
+  --color-border-strong: #cdd6e4;
+  --color-muted: #51607a; /* secondary text (~4.9:1) */
+
+  /* Severity — ordinal (slate → brown → red), each AA as text-on-white AND white-on-fill. Never used
+     color-alone: the badge always carries a text label. */
+  --color-sev-low: #51607a;
+  --color-sev-low-bg: #eef1f6;
+  --color-sev-med: #b45309;
+  --color-sev-med-bg: #fcf1e3;
+  --color-sev-high: #b4291a;
+  --color-sev-high-bg: #fbe9e6;
+
+  /* "Mono for evidence, sans for language." No Google-font fetch at build — system stacks keep the
+     build offline-safe; ui-monospace preserves the data/evidence distinction. */
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', 'Menlo', 'Consolas', 'Liberation Mono', monospace;
+}
+
+html {
+  color: var(--color-brand-ink);
+  background: var(--color-canvas);
+  font-family: var(--font-sans);
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  font-size: 14px; /* data-dense professional tool */
+  line-height: 1.5;
+}
+
+/* Visible keyboard focus everywhere; never rely on color alone. */
+:focus-visible {
+  outline: 2px solid var(--color-brand-blue);
+  outline-offset: 2px;
+}

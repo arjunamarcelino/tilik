@@ -13,7 +13,7 @@ on Docker Compose. Monorepo via **pnpm workspaces**.
 
 ```
 apps/api                      NestJS API (TS)    (Prompt 05 — auth/RBAC/audit shell; Prompt 06 — import pipeline)
-apps/web                      Next.js web (TS)   (Prompt 10+)
+apps/web                      Next.js web (TS)   (Prompt 10 — BFF portal: auth/cookie/DAL, role-aware shell, dashboard)
 packages/shared               shared TS enums/types
 packages/db (@tilik/db)       Prisma schema, migrations, typed client
 services/detector             Python worker      (Prompt 07 — outbox poller + tokenizer; 08 — repeat-billing + cloning; 09 — contradiction detector + Finding→Case aggregation) — NOT a workspace package
@@ -57,9 +57,14 @@ pnpm --filter @tilik/db db:grant                 # grant the non-owner app role 
 - **Two-role Postgres + append-only.** Owner runs Migrate; `tilik_app` (non-owner) runs the app.
   Append-only tables (`AuditEvent`/`EvidenceRecord`/`ClaimLine`; `ClaimVersion` content-immutable) are
   enforced by `ENABLE ALWAYS` triggers **and** by withholding UPDATE/DELETE from `tilik_app` in
-  `infra/postgres/grant-app.sql` (GRANT CRUD, then role-targeted REVOKE — a `REVOKE … FROM PUBLIC` is a
-  no-op). Keep that REVOKE list in sync with new append-only tables. Init SQL is a `.sh` (an initdb
-  `.sql` can't interpolate `$APP_DB_PASSWORD`).
+  `infra/postgres/grant-app.sql` (GRANT CRUD, then role-targeted REVOKE — a table-level `REVOKE … FROM
+PUBLIC` is a no-op). Keep that REVOKE list in sync with new append-only tables. Init SQL is a `.sh` (an
+  initdb `.sql` can't interpolate `$APP_DB_PASSWORD`). `grant-app.sql` also grants **schema** `USAGE` and
+  `REVOKE CREATE ON SCHEMA public FROM PUBLIC`/`tilik_app` so it's **reset-safe**: `prisma migrate reset`
+  DROPs+recreates schema `public` (losing the init's grants) → without this the non-owner hits "permission
+  denied for schema public". Append-only triggers block `TRUNCATE` too (even under `session_replication_role
+=replica`), so a full `migrate reset` — not a partial truncate — is the clean dev reset; re-run `db:grant`
+  after. Details: `docs/solutions/integration-issues/prisma-migrate-reset-grant-usage-prompt10.md`.
 - **`apps/api` (NestJS 11, CommonJS).** Pinned to Nest **11 + CJS** to match `@tilik/db`'s `moduleFormat:cjs`
   (v12 is ESM-first — don't upgrade blindly). The API connects as the **non-owner `tilik_app`** via
   `APP_DATABASE_URL` (never `DATABASE_URL`), **never runs migrations**, and asserts `current_user='tilik_app'` at
@@ -149,6 +154,22 @@ dedupeKey])` + `ON CONFLICT DO NOTHING` make re-detection safe (no natural key o
   never writes `sumber`/`mendukung`); `Case.severity` is recomputed from the **persisted** findings (enum
   `max()` = declaration order), not the drafts. Details:
   `docs/solutions/integration-issues/detector-contradiction-case-aggregation-prompt09.md`.
+- **Web portal (`apps/web`, Next.js 16 App Router + Tailwind v4 + strict TS, Prompt 10) — a BFF, not a
+  direct API client.** The JWT lives in an **httpOnly cookie** on the portal origin; a `server-only` DAL
+  (`src/lib/dal.ts`) forwards it as `Authorization: Bearer` to the API (CORS `credentials:false`, Bearer-only)
+  — the token never reaches browser JS. **`GET /v1/auth/me` is the single identity + liveness source** (its
+  401 = logged-out), so the web has **no `JWT_SECRET`/JWT lib**. Login/logout are **Server Actions**; the
+  dashboard reads **`GET /v1/cases/stats`** (both endpoints added Prompt 10 — new `CasesModule`, non-owner
+  `PrismaService`, read-only; `CasesModule` must never write the detector-owned `Case.severity`/existence —
+  two-writer contract). `proxy.ts` (Next 16 renamed **Middleware→Proxy**) is optimistic-redirect only + emits
+  a **per-request nonce CSP** (a static `script-src 'self'` blocks Next's inline scripts → no hydration).
+  The single root `.env` reaches Next's render workers only via a **`NODE_OPTIONS=--import ./load-env.mjs`
+  preload** (not `next.config`); it prunes to a web allow-list (`NEXT_PUBLIC_API_URL`/`WEB_PORT`) and must
+  **not** leak `NODE_ENV` into `next build` (Next owns it). Response DTOs live in the types-only
+  **`@tilik/shared/contracts`** subpath, pinned web-side with zod `satisfies z.ZodType<…>`; the role
+  hierarchy (`roleSatisfies`) is shared from `@tilik/shared` (API guard + web DAL). Verify hydration/CSP in a
+  **browser**, never trust a curl 200. Run it: `pnpm --filter @tilik/web dev`. Details:
+  `docs/solutions/integration-issues/nextjs-16-portal-bff-env-csp-prompt10.md`.
 - **Enums have one source of truth.** Values live in `@tilik/shared`, mirrored in `schema.prisma`;
   `packages/db/scripts/check-enum-parity.ts` fails `typecheck` on drift. Use `@tilik/shared` enums at
   DTO/validation/API boundaries, Prisma enums only at the persistence edge.

@@ -1,8 +1,11 @@
-import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import { Throttle, seconds } from '@nestjs/throttler';
+import type { Me } from '@tilik/shared/contracts';
 import { AuthService, LoginResult } from './auth.service';
+import { CurrentUser } from './decorators/current-user.decorator';
 import { Public } from './decorators/public.decorator';
 import { LoginDto } from './dto/login.dto';
+import type { AuthenticatedUser } from '../common/types/auth';
 
 @Controller('auth')
 export class AuthController {
@@ -15,5 +18,12 @@ export class AuthController {
   @Post('login')
   login(@Body() dto: LoginDto): Promise<LoginResult> {
     return this.auth.login(dto.email, dto.password);
+  }
+
+  // Authenticated (global JwtAuthGuard gates it — not @Public, no @Roles): identity + liveness probe for
+  // the portal. A deactivated/expired caller gets 401 here, which the web treats as "log out".
+  @Get('me')
+  me(@CurrentUser() user: AuthenticatedUser): Promise<Me> {
+    return this.auth.profile(user.userId);
   }
 }

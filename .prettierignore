@@ -3,6 +3,7 @@ node_modules
 pnpm-lock.yaml
 docs
 .next
+next-env.d.ts
 coverage
 .venv
 __pycache__

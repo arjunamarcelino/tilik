@@ -1,5 +1,6 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import type { Me } from '@tilik/shared/contracts';
 import { AuditService } from '../audit/audit.service';
 import { toDomainRole } from '../common/roles/role.util';
 import { PasswordService } from '../users/password.service';
@@ -54,5 +55,17 @@ export class AuthService {
     });
     const accessToken = this.jwt.sign({ sub: user.id, role: toDomainRole(user.role) });
     return { accessToken };
+  }
+
+  /**
+   * Resolve the authenticated `sub` to a safe profile for `GET /v1/auth/me`. Liveness is enforced UPSTREAM:
+   * the global JwtAuthGuard's JwtStrategy.validate re-checks `isActive` on every request, so a deactivated
+   * user never reaches here. `findProfileById` itself does NOT filter `isActive` (it's the safe
+   * {id,email,role} projection, never passwordHash) — a null means the row was deleted, not deactivated.
+   */
+  async profile(userId: string): Promise<Me> {
+    const user = await this.users.findProfileById(userId);
+    if (!user) throw new UnauthorizedException('Invalid credentials');
+    return { id: user.id, email: user.email, role: toDomainRole(user.role) };
   }
 }
