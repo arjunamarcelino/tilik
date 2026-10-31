@@ -1,4 +1,4 @@
-import { Controller, Get, Headers, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param, Query } from '@nestjs/common';
 import { Role } from '@tilik/shared';
 import type { CaseDetail, CaseListResponse, CaseStats } from '@tilik/shared/contracts';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -35,12 +35,7 @@ export class CasesController {
 
   @Get(':id')
   @Roles(Role.REVIEWER)
-  detail(
-    @Param('id') id: string,
-    @CurrentUser() user: AuthenticatedUser,
-    // The portal BFF forwards this on a prefetch render so a phantom (un-opened) case view isn't audited.
-    @Headers('x-tilik-prefetch') prefetch?: string,
-  ): Promise<CaseDetail> {
-    return this.cases.detail(id, user, prefetch === '1');
+  detail(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser): Promise<CaseDetail> {
+    return this.cases.detail(id, user);
   }
 }

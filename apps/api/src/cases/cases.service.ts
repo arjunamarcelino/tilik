@@ -165,9 +165,14 @@ export class CasesService {
    * Full case detail. Phased so authz/existence is settled before any fan-out or the audit write:
    * (1) authz `findUnique` → 404 here; (2) the independent branches in parallel (each on an index);
    * (3) per-evidence integrity verification (concurrency-capped); (4) the dynamic-id timeline; (5) the
-   * best-effort VIEW_CASE audit (skipped on prefetch). Reads only — the two-writer Case contract holds.
+   * best-effort VIEW_CASE audit. Reads only — the two-writer Case contract holds.
+   *
+   * VIEW_CASE is written on every detail read — there is no caller-controllable suppression. (A prefetch
+   * hint is NOT honoured: a spoofable client header must never gate a security-grade access log. Genuine
+   * Next prefetches don't reach here anyway — the case-row links are `prefetch={false}` and the audited
+   * read sits below the detail route's `loading.tsx` boundary.)
    */
-  async detail(id: string, actor: AuthenticatedUser, isPrefetch: boolean): Promise<CaseDetail> {
+  async detail(id: string, actor: AuthenticatedUser): Promise<CaseDetail> {
     const base = await this.prisma.case.findUnique({
       where: { id },
       select: {
@@ -214,20 +219,18 @@ export class CasesService {
       claimVersions,
     );
 
-    // Write VIEW_CASE only after authz+existence are confirmed, and never on a prefetch render. Best-effort:
-    // a read must not fail because its access-log insert did — but log loudly so a systematic failure shows.
-    if (!isPrefetch) {
-      try {
-        await this.audit.record({
-          actor: actor.userId,
-          action: ACTION_VIEW_CASE,
-          targetType: 'Case',
-          targetId: id,
-          metadata: { severity: base.severity, status: base.status },
-        });
-      } catch (err) {
-        this.logger.error({ err, caseId: id, actor: actor.userId }, 'VIEW_CASE audit write failed');
-      }
+    // Write VIEW_CASE after authz+existence are confirmed. Best-effort: a read must not fail because its
+    // access-log insert did — but log loudly so a systematic failure shows.
+    try {
+      await this.audit.record({
+        actor: actor.userId,
+        action: ACTION_VIEW_CASE,
+        targetType: 'Case',
+        targetId: id,
+        metadata: { severity: base.severity, status: base.status },
+      });
+    } catch (err) {
+      this.logger.error({ err, caseId: id, actor: actor.userId }, 'VIEW_CASE audit write failed');
     }
 
     return {

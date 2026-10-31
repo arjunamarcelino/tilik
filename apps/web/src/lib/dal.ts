@@ -1,6 +1,5 @@
 import 'server-only';
 import { cache } from 'react';
-import { headers } from 'next/headers';
 import { notFound, redirect } from 'next/navigation';
 import { Role, roleSatisfies } from '@tilik/shared';
 import type { CaseDetail, CaseListResponse, CaseStats, Me } from '@tilik/shared/contracts';
@@ -82,16 +81,13 @@ export async function getCases(filters: CaseListFilters = {}): Promise<CaseListR
   });
 }
 
-/** `GET /v1/cases/:id` — detail. `no-store` so every real navigation re-runs the audited read. Forwards a
- * prefetch signal so the API skips VIEW_CASE on a prefetch render (defence-in-depth behind prefetch=false
- * + the loading.tsx boundary). A 404 becomes Next's not-found. */
+/** `GET /v1/cases/:id` — detail. `no-store` so every real navigation re-runs the audited read. A 404
+ * becomes Next's not-found. (Genuine prefetches don't reach here — the row links are `prefetch={false}`
+ * and the audited read is below the route's `loading.tsx` boundary; the API audits every read it serves.) */
 export async function getCase(id: string): Promise<CaseDetail> {
-  const h = await headers();
-  const isPrefetch = h.get('next-router-prefetch') === '1' || h.get('purpose') === 'prefetch';
   try {
     return await apiFetch(`/cases/${encodeURIComponent(id)}`, CaseDetailSchema, {
       cache: 'no-store',
-      headers: isPrefetch ? { 'x-tilik-prefetch': '1' } : undefined,
     });
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) notFound();
