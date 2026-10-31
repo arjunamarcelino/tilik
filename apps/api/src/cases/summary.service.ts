@@ -158,6 +158,11 @@ export class SummaryService {
 
     const summary = fullText.slice(0, MAX_SUMMARY_LENGTH);
     const badCitations = countUnknownCitations(summary, context.evidenceIds);
+    // Grounding tripwire: a cited id outside the case's evidence allow-list is a fabricated/injected
+    // citation. Surface it (not just in the dropped audit metadata) so a grounding failure is visible.
+    if (badCitations > 0) {
+      this.logger.warn({ caseId: id, badCitations }, 'summary cited unknown evidence ids');
+    }
 
     // Success: cache + audit atomically. updateMany (not update) returns a rowcount instead of raising
     // P2025 if the case vanished mid-stream — so no Postgres error is ever raised inside this interactive tx.
@@ -296,7 +301,9 @@ function buildGroundingContext(
   const findingLines = findings.map((f) => {
     const reasons = parseReasons(f.reasons);
     const msgs = reasons.messages.length ? reasons.messages.join('; ') : '(tidak ada alasan)';
-    return `- [temuan ${f.id}] detektor=${f.detector} tingkat=${f.severity} skor=${f.score.toFixed(2)} alasan: ${scrubContent(msgs, nonce)}`;
+    // No square brackets around the finding id: [..] is reserved for evidence_id citations, so the citation
+    // check (countUnknownCitations) isn't polluted if the model echoes a finding id.
+    return `- temuan ${f.id} detektor=${f.detector} tingkat=${f.severity} skor=${f.score.toFixed(2)} alasan: ${scrubContent(msgs, nonce)}`;
   });
 
   const claimLines = claimVersions.map((cv) => {
@@ -372,7 +379,9 @@ function basename(objectKey: string | null): string {
 }
 
 /** Count cited [id] tokens that are NOT in the case's real evidence allow-list — a fabricated/injected
- * citation. Recorded in audit metadata; also an injection tripwire. */
+ * citation. Logged (warn) when non-zero and recorded in audit metadata — a grounding/injection tripwire.
+ * Only evidence_id citations use [..] in the prompt (finding/claim ids are unbracketed), so this doesn't
+ * false-count the model echoing a finding id. */
 function countUnknownCitations(summary: string, allow: Set<string>): number {
   const cited = summary.match(/\[([^\]]+)\]/g) ?? [];
   let bad = 0;
