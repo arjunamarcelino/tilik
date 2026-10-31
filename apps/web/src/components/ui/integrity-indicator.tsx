@@ -31,12 +31,6 @@ const META: Record<
     cls: 'border border-border bg-canvas text-muted',
     alert: false,
   },
-  pending: {
-    label: 'Verifying…',
-    glyph: '…',
-    cls: 'border border-border bg-canvas text-muted',
-    alert: false,
-  },
 };
 
 /** Integrity verdict + the recorded content hash (truncated for display, full value kept in the DOM). */

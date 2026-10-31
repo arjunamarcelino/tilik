@@ -99,7 +99,7 @@ const FindingSchema = z.object({
 }) satisfies z.ZodType<FindingDTO>;
 
 const EvidenceIntegritySchema = z.object({
-  status: z.enum(['pending', 'verified', 'mismatch', 'unavailable', 'display_only']),
+  status: z.enum(['verified', 'mismatch', 'unavailable', 'display_only']),
   contentHash: z.string(),
   hashAlgo: z.string(),
 }) satisfies z.ZodType<EvidenceIntegrity>;

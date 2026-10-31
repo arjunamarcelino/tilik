@@ -62,11 +62,9 @@ export type EvidenceRelation = 'mendukung' | 'bertentangan' | 'sumber';
  *   - unavailable  — the MinIO object couldn't be read (distinct from mismatch — operational, not tamper)
  *   - display_only — payload-backed evidence: the stored hash is shown, not recomputed (its hash is over a
  *                    canonical wrapper whose timestamp round-trip would false-mismatch)
- *   - pending      — not yet verified (reserved so an eager→lazy switch needs no contract change)
  * `download` on the record (not this field) tells file-backed vs payload-backed.
  */
-export type EvidenceIntegrityStatus =
-  'pending' | 'verified' | 'mismatch' | 'unavailable' | 'display_only';
+export type EvidenceIntegrityStatus = 'verified' | 'mismatch' | 'unavailable' | 'display_only';
 
 export interface EvidenceIntegrity {
   status: EvidenceIntegrityStatus;
