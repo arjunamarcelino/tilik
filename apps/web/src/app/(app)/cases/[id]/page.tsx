@@ -5,6 +5,7 @@ import { ClaimsPanel } from '@/components/cases/claims-panel';
 import { ContradictionsPanel } from '@/components/cases/contradictions-panel';
 import { EvidencePanel } from '@/components/cases/evidence-panel';
 import { FindingsPanel } from '@/components/cases/findings-panel';
+import { SummaryPanel } from '@/components/cases/summary-panel';
 import { Timeline } from '@/components/cases/timeline';
 import { Role } from '@tilik/shared';
 import { getCase, requireRole } from '@/lib/dal';
@@ -23,6 +24,8 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
       </Link>
 
       <CaseHeader kase={kase} />
+
+      <SummaryPanel caseId={kase.id} initialSummary={kase.summary} />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <FindingsPanel findings={kase.findings} />
