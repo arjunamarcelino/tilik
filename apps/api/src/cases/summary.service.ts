@@ -348,13 +348,17 @@ function buildGroundingContext(
   return { system: systemPrompt(), user, evidenceIds, truncated };
 }
 
-/** Drop identifier-looking top-level keys from a payload object before it is serialised into the prompt. */
+/** Recursively drop identifier-looking keys from a payload before it is serialised into the prompt. Recurses
+ * through nested objects AND arrays so a nested identifier (e.g. payload.visit.patientId, or one inside an
+ * array element) is dropped too — not just top-level keys. (Value-level PII in free-text narrative is NOT
+ * scrubbed; that is out of scope under the synthetic-data-only constraint and noted for a real-data review.) */
 function scrubPayload(payload: unknown): unknown {
-  if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) return payload;
+  if (Array.isArray(payload)) return payload.map(scrubPayload);
+  if (payload === null || typeof payload !== 'object') return payload;
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(payload as Record<string, unknown>)) {
     if (IDENTIFIER_KEY.test(key)) continue;
-    out[key] = value;
+    out[key] = scrubPayload(value);
   }
   return out;
 }
