@@ -141,10 +141,13 @@ export interface EvidenceRecordDTO {
   source: string | null;
   ingestedBy: string | null;
   integrity: EvidenceIntegrity;
-  /** Present ⇔ file-backed (downloadable via the BFF proxy); null ⇔ payload-backed (rendered inline). */
-  download: { href: string } | null;
-  /** Present ⇔ payload-backed; the raw JSON blob (untrusted shape). */
-  payload: unknown | null;
+  /**
+   * Present ⇔ file-backed (downloadable via the BFF proxy); null ⇔ payload-backed (rendered inline).
+   * `isImage` lets the UI render an inline <img> vs a download link without exposing the object key/ext.
+   */
+  download: { href: string; isImage: boolean } | null;
+  /** Present ⇔ payload-backed; the raw JSON blob (untrusted shape). Absent/null for file-backed records. */
+  payload?: unknown;
 }
 
 export interface EvidenceLinkDTO {

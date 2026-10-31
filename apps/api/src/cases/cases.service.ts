@@ -336,6 +336,7 @@ function toEvidenceDTO(
   caseId: string,
 ): EvidenceRecordDTO {
   const fileBacked = e.objectKey !== null;
+  const ext = fileBacked ? (e.objectKey?.split('.').pop()?.toLowerCase() ?? '') : '';
   return {
     id: e.id,
     kind: EvidenceKind[e.kind],
@@ -344,7 +345,9 @@ function toEvidenceDTO(
     ingestedBy: e.ingestedBy,
     integrity,
     // Portal-relative download route (the browser hits the Next proxy, which forwards to the API).
-    download: fileBacked ? { href: `/cases/${caseId}/evidence/${e.id}/download` } : null,
+    download: fileBacked
+      ? { href: `/cases/${caseId}/evidence/${e.id}/download`, isImage: ext === 'png' }
+      : null,
     payload: fileBacked ? null : (e.payload ?? null),
   };
 }
