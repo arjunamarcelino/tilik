@@ -453,8 +453,9 @@ function toAuditDTO(e: AuditEvent): AuditEventDTO {
     id: e.id,
     action: e.action,
     actorKind: isSystem ? 'system' : 'human',
-    // Label by role, not the raw actor id/email (don't leak reviewer identifiers across the portal).
-    actorLabel: isSystem ? 'Detector' : 'Reviewer',
+    // The display label lives here (single source) — by role, not the raw actor id/email (don't leak
+    // reviewer identifiers across the portal). The UI renders this verbatim.
+    actorLabel: isSystem ? 'System · Detector' : 'Reviewer',
     targetType: e.targetType,
     at: e.createdAt.toISOString(),
   };

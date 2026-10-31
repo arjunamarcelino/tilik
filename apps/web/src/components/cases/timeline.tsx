@@ -29,9 +29,7 @@ export function Timeline({ events }: { events: AuditEventDTO[] }) {
                 }`}
               />
               <div className="flex flex-wrap items-baseline gap-x-2">
-                <span className="text-sm font-medium text-brand-ink">
-                  {e.actorKind === 'system' ? 'System · Detector' : 'Reviewer'}
-                </span>
+                <span className="text-sm font-medium text-brand-ink">{e.actorLabel}</span>
                 <span className="text-sm text-muted">{ACTION_LABEL[e.action] ?? e.action}</span>
                 <time dateTime={e.at} className="ms-auto font-mono text-xs text-muted">
                   {fmt(e.at)}
