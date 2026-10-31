@@ -14,6 +14,7 @@ import type {
   CaseListItem,
   CaseListResponse,
   CaseStats,
+  ClaimLineDTO,
   ClaimVersionDTO,
   EvidenceIntegrity,
   EvidenceLinkDTO,
@@ -121,7 +122,7 @@ const ClaimLineSchema = z.object({
   sequence: z.number().int(),
   description: z.string().nullable(),
   amount: z.string().nullable(),
-});
+}) satisfies z.ZodType<ClaimLineDTO>;
 
 const ClaimVersionSchema = z.object({
   id: z.string().min(1),
