@@ -12,8 +12,8 @@ on Docker Compose. Monorepo via **pnpm workspaces**.
 ## Layout
 
 ```
-apps/api                      NestJS API (TS)    (Prompt 05 — auth/RBAC/audit shell; 06 — import pipeline; 11 — cases read API + evidence download)
-apps/web                      Next.js web (TS)   (Prompt 10 — BFF portal: auth/cookie/DAL, role-aware shell, dashboard; 11 — case list/detail review screens)
+apps/api                      NestJS API (TS)    (Prompt 05 — auth/RBAC/audit shell; 06 — import pipeline; 11 — cases read API + evidence download; 12 — reviewer decision write)
+apps/web                      Next.js web (TS)   (Prompt 10 — BFF portal: auth/cookie/DAL, role-aware shell, dashboard; 11 — case list/detail review screens; 12 — decision panel)
 packages/shared               shared TS enums/types
 packages/db (@tilik/db)       Prisma schema, migrations, typed client
 services/detector             Python worker      (Prompt 07 — outbox poller + tokenizer; 08 — repeat-billing + cloning; 09 — contradiction detector + Finding→Case aggregation) — NOT a workspace package
@@ -175,8 +175,9 @@ dedupeKey])` + `ON CONFLICT DO NOTHING` make re-detection safe (no natural key o
   the page ids, no N+1/over-fetch; **fixed order** `severity DESC, createdAt DESC, id DESC` with a **mandatory
   `id` tiebreaker**), `GET /v1/cases/:id` (findings, claims, evidence+integrity, `bertentangan` contradictions,
   a **dynamic multi-`targetId` audit timeline** — must include `EvidenceRecord` ids or the tamper event is
-  invisible), and case-scoped `GET /v1/cases/:caseId/evidence/:evidenceId/download`. `CasesModule` **writes
-  only `AuditEvent`** (two-writer `Case` holds). **VIEW_CASE** is a standalone `AuditService.record()` on the
+  invisible), and case-scoped `GET /v1/cases/:caseId/evidence/:evidenceId/download`. In Prompt 11 `CasesModule` **writes
+  only `AuditEvent`** (two-writer `Case` holds); **Prompt 12 adds the reviewer-owned `Case` write** (status/
+  assignedTo + `Decision`) — see the decision-flow bullet below. **VIEW_CASE** is a standalone `AuditService.record()` on the
   GET (interceptor skips GETs) — written on **every** detail read; never gate it on a client header (a
   spoofable `x-tilik-prefetch` was a review bug). **Evidence integrity** (shared `EvidenceIntegrityService`,
   no cache — verify live): compare `sha256(object bytes)` to the **append-only DB `contentHash`**, NOT the
@@ -196,6 +197,31 @@ case.episodeId`, 404 cross-case; `@Roles(REVIEWER)` — the guard **fails open**
   seeded fraud cases are payload-backed, so the verified-file/409 download path is unreachable from the UI
   (file evidence sits on clean episodes — Prompt 04 follow-up). Details:
   `docs/solutions/integration-issues/case-list-detail-evidence-download-prompt11.md`.
+- **Reviewer decision flow (`apps/api/src/cases` + `apps/web/.../cases/[id]`, Prompt 12) — the first
+  reviewer-owned `Case` write.** `POST /v1/cases/:id/decision` (`@Roles(REVIEWER)`, **no `@Audit`**) runs ONE
+  `$transaction`: insert the `Decision` via **`tx.decision.createMany({ skipDuplicates })`** (= `ON CONFLICT DO
+NOTHING`; `count===0` → `409 CASE_ALREADY_DECIDED`) — **never `create()`+catch-`P2002`**, because a unique
+  violation raised _inside_ an interactive tx corrupts the request-shared pg-adapter client
+  (**prisma/orm#30374**) — then `tx.case.update` (status/assignedTo only, **NEVER `severity`**) + an in-tx
+  `recordInTx('DECIDE', …)` (inline literal; metadata bounded + dropped by `toAuditDTO`). **No migration:** the
+  outcome lives on `Decision.verdict`; `Case.status` maps onto the **existing** enum (`CONFIRMED_FRAUD→
+ESCALATED`, `NOT_FRAUD→CLOSED`, `NEEDS_MORE_INFO→PENDING`) — `verdictToStatus()` returns the **Prisma** enum
+  (the shared↔Prisma nominal bridge is one-way; `Verdict[value]` only for Prisma→shared). `Decision.decidedAt`
+  has **no DB default** → set `new Date()`. All three verdicts are **terminal** (`@unique(caseId)`, panel
+  locks); `NEEDS_MORE_INFO` is intentionally non-revisitable. **`Decision` is app-immutable** via a
+  `grant-app.sql` `REVOKE UPDATE,DELETE,TRUNCATE … FROM tilik_app` (grant-level, NOT a trigger) — ships **no
+  migration**, so **`db:grant` must be re-run on a code-only deploy** or the REVOKE isn't applied.
+  **Two-writer is convention-only** (both writers are `tilik_app`; no apps/api unit harness — code review + e2e
+  is the guard). **Web:** the portal's **first authenticated Server Action** forwards the cookie bearer
+  **inline** (mirrors `login`; the DAL stays reads-only — no `apiMutate`); `cookies()` is async; use
+  **`useActionState`'s `pending`** (not `useFormStatus` in the form-owner); bust caches with
+  **`updateTag(CASE_STATS_TAG)`** (Next 16: `revalidateTag` now needs a cacheLife profile) + **`revalidatePath('/cases','page')`**
+  for the untagged list. Panel: inline **two-step confirm** for irreversible verdicts; focus-restore keyed on
+  `caseId`; `rationale` rendered as **safe JSX text** (`pre-wrap`, no `dangerouslySetInnerHTML`);
+  `decidedByLabel` is **role-only `'Reviewer'`** (no id fragment); AA — never white-on-`brand-green` (#00a050,
+  3.42:1), buttons hover **darker** (`brand-green-800`); `MAX_RATIONALE_LENGTH` is a shared scalar in
+  `@tilik/shared/constants`. **Known gap:** no segregation of duties (importer==decider; audit-detectable).
+  Details: `docs/solutions/integration-issues/case-decision-flow-prompt12.md`.
 - **Enums have one source of truth.** Values live in `@tilik/shared`, mirrored in `schema.prisma`;
   `packages/db/scripts/check-enum-parity.ts` fails `typecheck` on drift. Use `@tilik/shared` enums at
   DTO/validation/API boundaries, Prisma enums only at the persistence edge.
