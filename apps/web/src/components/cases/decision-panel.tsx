@@ -55,6 +55,8 @@ export function DecisionPanel({
   const recordRef = useRef<HTMLButtonElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
   const generalErrorRef = useRef<HTMLParagraphElement>(null);
+  const fieldsetRef = useRef<HTMLFieldSetElement>(null);
+  const rationaleRef = useRef<HTMLTextAreaElement>(null);
   const wasDecided = useRef(decision !== null);
 
   // On the undecided→decided transition (after the action revalidates), move focus to the locked heading —
@@ -128,6 +130,12 @@ export function DecisionPanel({
     if (rationale.trim().length === 0) errs.rationale = 'Rationale is required.';
     if (errs.verdict || errs.rationale) {
       setClientError(errs);
+      // Move focus to the first invalid control (the alert announces, but focus should land on the field).
+      if (errs.verdict) {
+        fieldsetRef.current?.querySelector<HTMLInputElement>('input[type="radio"]')?.focus();
+      } else {
+        rationaleRef.current?.focus();
+      }
       return;
     }
     setClientError(null);
@@ -144,6 +152,7 @@ export function DecisionPanel({
       </h2>
       <form action={formAction} className="flex flex-col gap-5 p-4">
         <fieldset
+          ref={fieldsetRef}
           disabled={pending}
           aria-describedby={verdictError ? 'verdict-error' : undefined}
           aria-invalid={verdictError ? true : undefined}
@@ -181,6 +190,7 @@ export function DecisionPanel({
             Rationale <span className="text-muted normal-case">(required)</span>
           </label>
           <textarea
+            ref={rationaleRef}
             id="rationale"
             name="rationale"
             required
