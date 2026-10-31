@@ -238,6 +238,9 @@ model Case {
   decision   Decision?
 
   @@index([status, createdAt(sort: Desc)])
+  // Backs the portal case-list default order (severity DESC, createdAt DESC, id DESC) so it's an
+  // index-ordered scan instead of a full sort+in-memory sort. (Review I-6.)
+  @@index([severity(sort: Desc), createdAt(sort: Desc), id(sort: Desc)])
 }
 
 model Decision {
