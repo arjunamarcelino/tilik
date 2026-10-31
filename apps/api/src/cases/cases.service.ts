@@ -317,8 +317,11 @@ export class CasesService {
 
     const ext = evidence.objectKey.split('.').pop()?.toLowerCase() ?? '';
     const contentType = CONTENT_TYPE[ext] ?? 'application/octet-stream';
-    // Server-controlled, ASCII-safe filename — never reflect objectKey/user input into the header.
-    const filename = `evidence-${evidenceId}.${ext || 'bin'}`;
+    // Server-controlled, ASCII-safe filename — never reflect objectKey/user input into the header. The id
+    // is a cuid today (header-safe), but strip to [A-Za-z0-9_-] so a future id format can't inject header
+    // breaks (CR/LF, `"`, `;`) into Content-Disposition.
+    const safeId = evidenceId.replace(/[^A-Za-z0-9_-]/g, '');
+    const filename = `evidence-${safeId}.${ext || 'bin'}`;
     return { buffer: loaded.buffer, contentType, filename };
   }
 
