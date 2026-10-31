@@ -134,6 +134,12 @@ export interface ClaimVersionDTO {
   lines: ClaimLineDTO[];
 }
 
+/**
+ * Flat shape (not a discriminated union) with one invariant: `download !== null` ⇔ file-backed ⇔ the record
+ * is downloadable/verifiable; `download === null` ⇔ payload-backed ⇔ `payload` carries the inline JSON.
+ * The runtime guards in the service/UI uphold it; kept flat deliberately (a union would ripple across every
+ * evidence consumer for marginal gain).
+ */
 export interface EvidenceRecordDTO {
   id: string;
   kind: EvidenceKind;
@@ -142,10 +148,11 @@ export interface EvidenceRecordDTO {
   ingestedBy: string | null;
   integrity: EvidenceIntegrity;
   /**
-   * Present ⇔ file-backed (downloadable via the BFF proxy); null ⇔ payload-backed (rendered inline).
-   * `isImage` lets the UI render an inline <img> vs a download link without exposing the object key/ext.
+   * File-backed descriptor, or null for payload-backed. `isImage` lets the UI render an inline <img> vs a
+   * download link. The portal builds the actual download URL from its own route — the API stays ignorant of
+   * portal routing (it never emits a web path).
    */
-  download: { href: string; isImage: boolean } | null;
+  download: { isImage: boolean } | null;
   /** Present ⇔ payload-backed; the raw JSON blob (untrusted shape). Absent/null for file-backed records. */
   payload?: unknown;
 }

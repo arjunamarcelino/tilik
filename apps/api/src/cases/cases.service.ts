@@ -209,7 +209,7 @@ export class CasesService {
 
     const evidenceDtos = await mapWithConcurrency(evidence, VERIFY_CONCURRENCY, async (e) => {
       const integrity = await this.integrity.verify(e);
-      return toEvidenceDTO(e, integrity, id);
+      return toEvidenceDTO(e, integrity);
     });
 
     const timeline = await this.loadTimeline(
@@ -337,11 +337,7 @@ function toClaimLineDTO(l: ClaimLine): ClaimVersionDTO['lines'][number] {
   };
 }
 
-function toEvidenceDTO(
-  e: EvidenceRecord,
-  integrity: EvidenceIntegrity,
-  caseId: string,
-): EvidenceRecordDTO {
+function toEvidenceDTO(e: EvidenceRecord, integrity: EvidenceIntegrity): EvidenceRecordDTO {
   const fileBacked = e.objectKey !== null;
   const ext = fileBacked ? (e.objectKey?.split('.').pop()?.toLowerCase() ?? '') : '';
   return {
@@ -351,10 +347,9 @@ function toEvidenceDTO(
     source: e.source,
     ingestedBy: e.ingestedBy,
     integrity,
-    // Portal-relative download route (the browser hits the Next proxy, which forwards to the API).
-    download: fileBacked
-      ? { href: `/cases/${caseId}/evidence/${e.id}/download`, isImage: ext === 'png' }
-      : null,
+    // File-backed descriptor only — the portal builds the download URL from its own route. The API must
+    // not embed a web path (it's globally /v1-prefixed; the portal route is not).
+    download: fileBacked ? { isImage: ext === 'png' } : null,
     payload: fileBacked ? null : (e.payload ?? null),
   };
 }

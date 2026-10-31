@@ -4,8 +4,18 @@ import { IntegrityIndicator } from '../ui/integrity-indicator';
 import { labelKind, Panel, PanelEmpty } from './panel';
 
 /** Evidence records with the live integrity verdict. Images render inline; other files download; payload-
- * backed records render their JSON inline. Note: the current seed is payload-only (file path untested). */
-export function EvidencePanel({ evidence }: { evidence: EvidenceRecordDTO[] }) {
+ * backed records render their JSON inline. Note: the current seed is payload-only (file path untested).
+ * The download URL is built here (the portal owns its own route) from the caseId + evidence id. */
+export function EvidencePanel({
+  caseId,
+  evidence,
+}: {
+  caseId: string;
+  evidence: EvidenceRecordDTO[];
+}) {
+  const downloadHref = (evidenceId: string): string =>
+    `/cases/${caseId}/evidence/${evidenceId}/download`;
+
   return (
     <Panel title="Evidence" count={evidence.length}>
       {evidence.length === 0 ? (
@@ -27,14 +37,14 @@ export function EvidencePanel({ evidence }: { evidence: EvidenceRecordDTO[] }) {
               {e.download?.isImage && (
                 // Plain <img>, not next/image: a dynamic same-origin proxy route with no fixed dimensions.
                 <img
-                  src={e.download.href}
+                  src={downloadHref(e.id)}
                   alt={`Evidence ${e.id} preview`}
                   className="mt-3 max-h-64 rounded border border-border"
                 />
               )}
               {e.download && !e.download.isImage && (
                 <a
-                  href={e.download.href}
+                  href={downloadHref(e.id)}
                   className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-brand-blue underline"
                 >
                   Download file

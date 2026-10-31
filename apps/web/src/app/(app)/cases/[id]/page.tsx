@@ -26,7 +26,7 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
       <div className="grid gap-6 lg:grid-cols-2">
         <FindingsPanel findings={kase.findings} />
         <ContradictionsPanel kase={kase} />
-        <EvidencePanel evidence={kase.evidence} />
+        <EvidencePanel caseId={kase.id} evidence={kase.evidence} />
         <Timeline events={kase.timeline} />
       </div>
 

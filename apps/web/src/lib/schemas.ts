@@ -111,7 +111,7 @@ const EvidenceRecordSchema = z.object({
   source: z.string().nullable(),
   ingestedBy: z.string().nullable(),
   integrity: EvidenceIntegritySchema,
-  download: z.object({ href: z.string(), isImage: z.boolean() }).nullable(),
+  download: z.object({ isImage: z.boolean() }).nullable(),
   payload: z.unknown(),
 }) satisfies z.ZodType<EvidenceRecordDTO>;
 
