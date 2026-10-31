@@ -57,14 +57,20 @@ export function DecisionPanel({
   const generalErrorRef = useRef<HTMLParagraphElement>(null);
   const fieldsetRef = useRef<HTMLFieldSetElement>(null);
   const rationaleRef = useRef<HTMLTextAreaElement>(null);
-  const wasDecided = useRef(decision !== null);
+  const prevFocus = useRef<{ caseId: string; decided: boolean }>({
+    caseId,
+    decided: decision !== null,
+  });
 
-  // On the undecided→decided transition (after the action revalidates), move focus to the locked heading —
-  // but NOT on a fresh load of an already-decided case (don't steal focus on navigation).
+  // Move focus to the locked heading only when THIS case flips undecided→decided (after the action
+  // revalidates) — never on a fresh load / navigation to an already-decided case (which would steal focus).
+  // Keyed on caseId so it stays correct even if React reuses this instance across an [id] change.
   useEffect(() => {
-    if (!wasDecided.current && decision) headingRef.current?.focus();
-    wasDecided.current = decision !== null;
-  }, [decision]);
+    const prev = prevFocus.current;
+    const decided = decision !== null;
+    if (prev.caseId === caseId && !prev.decided && decided) headingRef.current?.focus();
+    prevFocus.current = { caseId, decided };
+  }, [caseId, decision]);
 
   // Entering the confirm step moves focus to the confirm button; a server error drops back to the edit view.
   useEffect(() => {
