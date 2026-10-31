@@ -198,6 +198,11 @@ export class SummaryService {
                 model: MODEL,
                 regenerated: dto.regenerate === true,
                 badCitations,
+                // The browser is streamed the raw text; the cache is code-point-capped. Record when they
+                // diverge (output exceeded the cap) and the stop_reason (e.g. 'max_tokens' = model-truncated),
+                // so a truncated-but-cached-as-success summary is traceable rather than silent.
+                summaryTruncated: chars.length > MAX_SUMMARY_LENGTH,
+                stopReason: message.stop_reason,
               },
             });
           }
