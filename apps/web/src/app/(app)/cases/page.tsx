@@ -14,9 +14,11 @@ const first = (v: string | string[] | undefined): string | undefined =>
   Array.isArray(v) ? v[0] : v;
 
 // Only pass a filter through if it's a known enum value — a hand-edited/garbage querystring is ignored
-// (defaults), never 400s the API or 500s the page.
-const oneOf = <T extends string>(values: readonly T[], v: string | undefined): T | undefined =>
-  v && (values as readonly string[]).includes(v) ? (v as T) : undefined;
+// (defaults), never 400s the API or 500s the page. A type guard narrows without an `as` cast.
+const oneOf = <T extends string>(values: readonly T[], v: string | undefined): T | undefined => {
+  const isOne = (x: string): x is T => (values as readonly string[]).includes(x);
+  return v !== undefined && isOne(v) ? v : undefined;
+};
 
 export default async function CasesPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   await requireRole(Role.REVIEWER);
