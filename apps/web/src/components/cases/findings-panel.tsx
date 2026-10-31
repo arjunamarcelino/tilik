@@ -29,7 +29,7 @@ export function FindingsPanel({ findings }: { findings: FindingDTO[] }) {
               {f.reasons.messages.length > 0 ? (
                 <ul className="mt-2 list-disc pl-5 text-sm text-brand-ink/90">
                   {f.reasons.messages.map((m, i) => (
-                    <li key={i}>{m}</li>
+                    <li key={`${i}-${m.slice(0, 32)}`}>{m}</li>
                   ))}
                 </ul>
               ) : (
