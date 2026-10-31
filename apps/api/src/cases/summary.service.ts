@@ -2,19 +2,25 @@ import { randomBytes } from 'node:crypto';
 import {
   Injectable,
   Logger,
-  NotFoundException,
   ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
 import type { Response } from 'express';
-import { Prisma, type ClaimLine, type EvidenceRecord, type Finding } from '@tilik/db';
+import {
+  Prisma,
+  type ClaimLine,
+  type EvidenceLink,
+  type EvidenceRecord,
+  type Finding,
+} from '@tilik/db';
 import { MAX_SUMMARY_LENGTH } from '@tilik/shared/constants';
 import { AuditService } from '../audit/audit.service';
 import type { AuthenticatedUser } from '../common/types/auth';
 import type { EnvironmentVariables } from '../config/env.validation';
 import { PrismaService } from '../prisma/prisma.service';
+import { CaseContextService, type ClaimVersionWithLines } from './case-context.service';
 import type { GenerateSummaryDto } from './dto/generate-summary.dto';
 import { parseReasons } from './finding-json';
 
@@ -37,8 +43,6 @@ const MAX_PAYLOAD_CHARS = 2000;
 // Episode identity (patientToken/facilityId) is never even gathered for the summary — this is a second layer
 // over free-form payload JSON that an import format might extend with an identifier field.
 const IDENTIFIER_KEY = /nik|bpjs|ktp|pasien|patient|peserta|kartu|ssn|nomor/i;
-
-type ClaimVersionWithLines = Prisma.ClaimVersionGetPayload<{ include: { lines: true } }>;
 
 interface GroundingContext {
   system: string;
@@ -77,6 +81,7 @@ export class SummaryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly context: CaseContextService,
     config: ConfigService<EnvironmentVariables, true>,
   ) {
     // The SDK never logs the key; we also never log a raw SDK error object (it can carry the request headers).
@@ -201,32 +206,14 @@ export class SummaryService {
   }
 
   /**
-   * Side-effect-free gather for the summary prompt: case scalars + findings + claim versions + evidence +
-   * evidence links. Deliberately does NOT verify evidence integrity (no MinIO fetch — file-backed evidence
-   * contributes metadata only) and does NOT write a VIEW_CASE audit (the detail read owns that). Episode
-   * identity (patientToken/facilityId) is never selected, so it can never reach the prompt.
+   * Build the grounding context from the SHARED, side-effect-free gather (CaseContextService) — the same
+   * read surface the detail page renders, so the summary can't diverge from what the reviewer sees. The
+   * gather verifies no evidence integrity (no MinIO fetch — file-backed evidence is metadata only) and
+   * writes no VIEW_CASE audit, and the prompt builder uses only findings/claims/evidence/links — never the
+   * episode identity (patientToken/facilityId) that rides on the gather's base row.
    */
   private async assembleContext(id: string): Promise<GroundingContext> {
-    const base = await this.prisma.case.findUnique({
-      where: { id },
-      select: { id: true, status: true, severity: true, episodeId: true },
-    });
-    if (!base) throw new NotFoundException({ code: 'CASE_NOT_FOUND' });
-
-    const [findings, claimVersions, evidence, links] = await Promise.all([
-      this.prisma.finding.findMany({ where: { caseId: id } }),
-      this.prisma.claimVersion.findMany({
-        where: { episodeId: base.episodeId },
-        include: { lines: { orderBy: { sequence: 'asc' } } },
-        orderBy: [{ claimNo: 'asc' }, { version: 'asc' }],
-      }),
-      this.prisma.evidenceRecord.findMany({
-        where: { episodeId: base.episodeId },
-        orderBy: { capturedAt: 'asc' },
-      }),
-      this.prisma.evidenceLink.findMany({ where: { evidence: { episodeId: base.episodeId } } }),
-    ]);
-
+    const { findings, claimVersions, evidence, links } = await this.context.gather(id); // 404 here
     return buildGroundingContext(findings, claimVersions, evidence, links);
   }
 
@@ -286,12 +273,7 @@ function buildGroundingContext(
   findings: Finding[],
   claimVersions: ClaimVersionWithLines[],
   evidence: EvidenceRecord[],
-  links: {
-    relation: string;
-    evidenceId: string;
-    claimVersionId: string | null;
-    note: string | null;
-  }[],
+  links: EvidenceLink[],
 ): GroundingContext {
   // Per-request unguessable nonce on the delimiter so evidence content cannot forge a boundary.
   const nonce = randomBytes(9).toString('hex');
