@@ -19,5 +19,7 @@ export function parseReasons(value: unknown): FindingReasons {
         : {};
     return { messages, detail };
   }
-  return { messages: [], detail: { _parseError: true } };
+  // Degrade to an empty shape (matching the success-with-no-detail branch) rather than injecting a marker:
+  // the findings panel renders every `detail` entry, so a `_parseError` key would surface as a raw UI row.
+  return { messages: [], detail: {} };
 }
