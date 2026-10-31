@@ -25,7 +25,9 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
 
       <CaseHeader kase={kase} />
 
-      <SummaryPanel caseId={kase.id} initialSummary={kase.summary} />
+      {/* key on the case id: the App Router reuses this client instance across /cases/[id] navigations, so
+          without a key the useState initializers keep the previous case's cached summary. */}
+      <SummaryPanel key={kase.id} caseId={kase.id} initialSummary={kase.summary} />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <FindingsPanel findings={kase.findings} />
