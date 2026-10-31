@@ -2,12 +2,13 @@
 
 import { useActionState, useEffect, useRef, useState } from 'react';
 import { Verdict } from '@tilik/shared';
+import { MAX_RATIONALE_LENGTH } from '@tilik/shared/constants';
 import type { CaseDecision } from '@tilik/shared/contracts';
 import { VerdictBadge } from '@/components/ui/badge';
 import { decide, type DecideState } from '@/app/(app)/cases/[id]/actions';
 import { VERDICT_LABEL } from './labels';
 
-const MAX = 2000;
+const MAX = MAX_RATIONALE_LENGTH;
 const VERDICTS: Verdict[] = [Verdict.CONFIRMED_FRAUD, Verdict.NOT_FRAUD, Verdict.NEEDS_MORE_INFO];
 
 // Pre-commit confirmation copy. CONFIRMED_FRAUD / NOT_FRAUD are accusatory + permanent; NEEDS_MORE_INFO is

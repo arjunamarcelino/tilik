@@ -30,3 +30,10 @@ export const AUDIT_ACTION = {
   DETECT: 'DETECT', // detector worker, per processed episode: a summary of what detection produced
 } as const;
 export type AuditAction = (typeof AUDIT_ACTION)[keyof typeof AUDIT_ACTION];
+
+/**
+ * Max length of a reviewer's decision rationale (Prompt 12). Single source of truth so the API DTO
+ * (`@MaxLength`) and the web request schema (`.max`) + counter bound it identically — a bump on one side
+ * can't silently diverge. A plain scalar (not a Record), so it does not affect the enum-parity guard.
+ */
+export const MAX_RATIONALE_LENGTH = 2000;

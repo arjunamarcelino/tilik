@@ -9,6 +9,7 @@ import {
   Severity,
   Verdict,
 } from '@tilik/shared';
+import { MAX_RATIONALE_LENGTH } from '@tilik/shared/constants';
 import type {
   AuditEventDTO,
   CaseDecision,
@@ -43,7 +44,7 @@ export const LoginCredentialsSchema = z.object({
 // Server Action validates with this before forwarding, so an empty verdict/rationale never leaves the portal.
 export const DecideRequestSchema = z.object({
   verdict: z.nativeEnum(Verdict),
-  rationale: z.string().trim().min(1).max(2000),
+  rationale: z.string().trim().min(1).max(MAX_RATIONALE_LENGTH),
 });
 
 const count = z.number().int().nonnegative();

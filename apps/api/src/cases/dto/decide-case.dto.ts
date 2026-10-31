@@ -1,6 +1,7 @@
 import { Transform } from 'class-transformer';
 import { IsIn, IsString, MaxLength, MinLength } from 'class-validator';
 import { Verdict } from '@tilik/shared';
+import { MAX_RATIONALE_LENGTH } from '@tilik/shared/constants';
 
 /**
  * `POST /v1/cases/:id/decision` body. The reviewer issues a verdict + a required rationale.
@@ -20,6 +21,6 @@ export class DecideCaseDto {
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @MinLength(1, { message: 'rationale is required' })
-  @MaxLength(2000)
+  @MaxLength(MAX_RATIONALE_LENGTH)
   rationale!: string;
 }
