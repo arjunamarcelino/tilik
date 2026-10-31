@@ -82,7 +82,7 @@ export function DecisionPanel({
   // A server error collapses the confirm step, unmounting the focused confirm button → focus would fall to
   // <body>. Move it to the error message so a keyboard/SR user keeps their place.
   useEffect(() => {
-    if (state.kind === 'error' && !state.fieldErrors) generalErrorRef.current?.focus();
+    if (state.kind === 'error') generalErrorRef.current?.focus();
   }, [state]);
 
   if (decision) {
@@ -124,11 +124,9 @@ export function DecisionPanel({
     );
   }
 
-  const verdictError =
-    clientError?.verdict ?? (state.kind === 'error' ? state.fieldErrors?.verdict : undefined);
-  const rationaleError =
-    clientError?.rationale ?? (state.kind === 'error' ? state.fieldErrors?.rationale : undefined);
-  const generalError = state.kind === 'error' && !state.fieldErrors ? state.message : undefined;
+  const verdictError = clientError?.verdict;
+  const rationaleError = clientError?.rationale;
+  const generalError = state.kind === 'error' ? state.message : undefined;
 
   function handleRecord() {
     const errs: { verdict?: string; rationale?: string } = {};

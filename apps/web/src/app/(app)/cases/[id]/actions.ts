@@ -12,12 +12,12 @@ import { readToken } from '@/lib/session';
  * Decision-panel state.
  *   - idle       — initial, or a successful decide (the revalidated server render shows the locked panel)
  *   - reconciled — the case was already decided (409): a STATE, not a failure; render it neutral, not as an error
- *   - error      — a validation (400 / client) or server (403/429/5xx/unreachable) failure
+ *   - error      — a server failure (400/403/429/5xx/unreachable). Per-field errors aren't modelled here:
+ *                  the panel's client gate blocks an empty/invalid submit, so the form never reaches the
+ *                  action with bad input (and with JS off the two-step confirm can't submit at all).
  */
 export type DecideState =
-  | { kind: 'idle' }
-  | { kind: 'reconciled'; message: string }
-  | { kind: 'error'; message: string; fieldErrors?: { verdict?: string; rationale?: string } };
+  { kind: 'idle' } | { kind: 'reconciled'; message: string } | { kind: 'error'; message: string };
 
 /**
  * The system's first authenticated write (Prompt 12). A Server Action forwards the httpOnly-cookie JWT as a
@@ -37,12 +37,8 @@ export async function decide(
     rationale: formData.get('rationale'),
   });
   if (!parsed.success) {
-    const fe = parsed.error.flatten().fieldErrors;
-    return {
-      kind: 'error',
-      message: 'Choose a verdict and enter a rationale.',
-      fieldErrors: { verdict: fe.verdict?.[0], rationale: fe.rationale?.[0] },
-    };
+    // Unreachable through the UI (the client gate validates first) — server-side defence in depth only.
+    return { kind: 'error', message: 'Choose a verdict and enter a rationale.' };
   }
 
   const token = await readToken();
