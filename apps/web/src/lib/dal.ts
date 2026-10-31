@@ -54,8 +54,8 @@ export const getCurrentUser = cache(
   (): Promise<Me> => apiFetch('/auth/me', MeSchema, { cache: 'no-store' }), // liveness probe — never cache
 );
 
-// Global, non-personalized counts. Tagged so Prompt 11's case mutations can `revalidateTag('cases-stats')`
-// to refresh the dashboard immediately instead of waiting out the 15s window (review P2-3).
+// Global, non-personalized counts. Tagged so the Prompt 12 decision action can `updateTag('cases-stats')`
+// to refresh the dashboard immediately instead of waiting out the 15s window.
 export const CASE_STATS_TAG = 'cases-stats';
 export const getCaseStats = cache((): Promise<CaseStats> =>
   apiFetch('/cases/stats', CaseStatsSchema, { next: { revalidate: 15, tags: [CASE_STATS_TAG] } }),
