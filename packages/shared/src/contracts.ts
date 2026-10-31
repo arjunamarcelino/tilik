@@ -105,8 +105,6 @@ export interface FindingDTO {
   score: number;
   severity: Severity;
   reasons: FindingReasons;
-  /** EvidenceRecord ids this finding points at (soft refs; may be empty). */
-  evidenceRefs: string[];
   claimVersionId: string | null;
 }
 

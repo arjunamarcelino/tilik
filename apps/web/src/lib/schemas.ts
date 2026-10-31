@@ -94,7 +94,6 @@ const FindingSchema = z.object({
   score: z.number(),
   severity: z.nativeEnum(Severity),
   reasons: FindingReasonsSchema,
-  evidenceRefs: z.array(z.string()),
   claimVersionId: z.string().nullable(),
 }) satisfies z.ZodType<FindingDTO>;
 

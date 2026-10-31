@@ -1,10 +1,10 @@
 import type { FindingReasons } from '@tilik/shared/contracts';
 
 /**
- * Finding.reasons / evidenceRefs are authored by the Python detector — a cross-service, cross-language
- * boundary — so they must be parsed defensively, NOT read with the `fromJsonValue<T>()` cast (whose doc
- * restricts it to JSON this process wrote). These guards never throw: a malformed shape degrades to an
- * empty result so a single bad finding can't 500 the whole case read.
+ * Finding.reasons is authored by the Python detector — a cross-service, cross-language boundary — so it
+ * must be parsed defensively, NOT read with the `fromJsonValue<T>()` cast (whose doc restricts it to JSON
+ * this process wrote). The guard never throws: a malformed shape degrades to an empty result so a single
+ * bad finding can't 500 the whole case read.
  */
 
 export function parseReasons(value: unknown): FindingReasons {
@@ -20,9 +20,4 @@ export function parseReasons(value: unknown): FindingReasons {
     return { messages, detail };
   }
   return { messages: [], detail: { _parseError: true } };
-}
-
-/** Finding.evidenceRefs is a JSON array of EvidenceRecord id strings. */
-export function parseEvidenceRefs(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
 }

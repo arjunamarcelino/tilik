@@ -37,7 +37,7 @@ import type { AuthenticatedUser } from '../common/types/auth';
 import { PrismaService } from '../prisma/prisma.service';
 import type { ListCasesQuery } from './dto/list-cases.query';
 import { EvidenceIntegrityService } from './evidence-integrity.service';
-import { parseEvidenceRefs, parseReasons } from './finding-json';
+import { parseReasons } from './finding-json';
 
 // VIEW_CASE is written AND read only by the API, so by the shared-constants convention it's an inline
 // literal here (not added to @tilik/shared/constants, which is for cross-service actions only).
@@ -376,7 +376,6 @@ function toFindingDTO(f: Finding): FindingDTO {
     score: f.score,
     severity: Severity[f.severity],
     reasons: parseReasons(f.reasons),
-    evidenceRefs: parseEvidenceRefs(f.evidenceRefs),
     claimVersionId: f.claimVersionId,
   };
 }
