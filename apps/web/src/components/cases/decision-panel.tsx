@@ -8,7 +8,6 @@ import { decide, type DecideState } from '@/app/(app)/cases/[id]/actions';
 import { VERDICT_LABEL } from './labels';
 
 const MAX = 2000;
-const NEAR_LIMIT = MAX - 200;
 const VERDICTS: Verdict[] = [Verdict.CONFIRMED_FRAUD, Verdict.NOT_FRAUD, Verdict.NEEDS_MORE_INFO];
 
 // Pre-commit confirmation copy. CONFIRMED_FRAUD / NOT_FRAUD are accusatory + permanent; NEEDS_MORE_INFO is
@@ -195,11 +194,9 @@ export function DecisionPanel({
             <p id="rationale-hint" className="text-xs text-muted">
               Explain your reasoning — recorded in the audit trail.
             </p>
-            <p
-              id="rationale-count"
-              aria-live={rationale.length >= NEAR_LIMIT ? 'polite' : 'off'}
-              className="text-xs text-muted tabular-nums"
-            >
+            {/* Static counter — no aria-live (dynamically flipping politeness is inconsistently announced and
+                chatty); it's in the textarea's aria-describedby, so a screen reader reads it on focus. */}
+            <p id="rationale-count" className="text-xs text-muted tabular-nums">
               {rationale.length} / {MAX}
             </p>
           </div>
