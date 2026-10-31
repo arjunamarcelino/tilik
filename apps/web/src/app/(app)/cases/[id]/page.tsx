@@ -6,12 +6,13 @@ import { ContradictionsPanel } from '@/components/cases/contradictions-panel';
 import { EvidencePanel } from '@/components/cases/evidence-panel';
 import { FindingsPanel } from '@/components/cases/findings-panel';
 import { Timeline } from '@/components/cases/timeline';
-import { getCase, requireSession } from '@/lib/dal';
+import { Role } from '@tilik/shared';
+import { getCase, requireRole } from '@/lib/dal';
 
 export const metadata: Metadata = { title: 'Case — Tilik' };
 
 export default async function CaseDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireSession();
+  await requireRole(Role.REVIEWER);
   const { id } = await params;
   const kase = await getCase(id); // a 404 becomes Next's not-found
 

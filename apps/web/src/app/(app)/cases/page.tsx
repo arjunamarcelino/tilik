@@ -1,10 +1,10 @@
 import type { Metadata } from 'next';
-import { CaseStatus, DetectorType, Severity } from '@tilik/shared';
+import { CaseStatus, DetectorType, Role, Severity } from '@tilik/shared';
 import { CaseFilters } from '@/components/cases/case-filters';
 import { CaseTable } from '@/components/cases/case-table';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Pager } from '@/components/ui/pager';
-import { getCases, requireSession, type CaseListFilters } from '@/lib/dal';
+import { getCases, requireRole, type CaseListFilters } from '@/lib/dal';
 
 export const metadata: Metadata = { title: 'Cases — Tilik' };
 
@@ -19,7 +19,7 @@ const oneOf = <T extends string>(values: readonly T[], v: string | undefined): T
   v && (values as readonly string[]).includes(v) ? (v as T) : undefined;
 
 export default async function CasesPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  await requireSession();
+  await requireRole(Role.REVIEWER);
   const sp = await searchParams;
 
   const page = Math.max(1, Number(first(sp.page)) || 1);
