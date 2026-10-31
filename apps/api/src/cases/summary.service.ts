@@ -164,7 +164,10 @@ export class SummaryService {
       throw new UnprocessableEntityException({ code: 'SUMMARY_UNAVAILABLE' });
     }
 
-    const summary = fullText.slice(0, MAX_SUMMARY_LENGTH);
+    // Slice by code point (Array.from iterates code points), so the cut can't split a surrogate pair at the
+    // boundary and leave a garbled final character.
+    const chars = Array.from(fullText);
+    const summary = chars.slice(0, MAX_SUMMARY_LENGTH).join('');
     const badCitations = countUnknownCitations(summary, context.evidenceIds);
     // Grounding tripwire: a cited id outside the case's evidence allow-list is a fabricated/injected
     // citation. Surface it (not just in the dropped audit metadata) so a grounding failure is visible.
