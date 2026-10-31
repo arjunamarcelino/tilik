@@ -217,6 +217,7 @@ export class CasesService {
       episodeId,
       base.episode.importBatchId,
       claimVersions,
+      evidence.map((e) => e.id),
     );
 
     // Write VIEW_CASE after authz+existence are confirmed. Best-effort: a read must not fail because its
@@ -255,14 +256,16 @@ export class CasesService {
   /**
    * The case timeline spans multiple targetIds. Core events (import/detect) are few → load them all (asc);
    * VIEW_CASE grows unboundedly → load only the most recent and merge. The import-batch id set is dynamic
-   * (episode + every claim version can differ on resubmission) and claim-version ids are folded in to
-   * survive a future ClaimVersion-targeted audit.
+   * (episode + every claim version can differ on resubmission); claim-version ids are folded in to survive
+   * a future ClaimVersion-targeted audit; and the episode's evidence ids are included so the product's core
+   * tamper event (EVIDENCE_INTEGRITY_FAILED, targetType=EvidenceRecord) actually surfaces in the timeline.
    */
   private async loadTimeline(
     caseId: string,
     episodeId: string,
     episodeBatchId: string | null,
     claimVersions: ClaimVersionWithLines[],
+    evidenceIds: string[],
   ): Promise<AuditEventDTO[]> {
     const targetIds = new Set<string>([caseId, episodeId]);
     if (episodeBatchId) targetIds.add(episodeBatchId);
@@ -270,6 +273,7 @@ export class CasesService {
       targetIds.add(cv.id);
       if (cv.importBatchId) targetIds.add(cv.importBatchId);
     }
+    for (const eid of evidenceIds) targetIds.add(eid);
     const ids = [...targetIds];
 
     const [core, views] = await Promise.all([
