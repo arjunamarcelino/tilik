@@ -37,6 +37,7 @@ import { AuditService } from '../audit/audit.service';
 import { mapWithConcurrency } from '../common/concurrency';
 import type { AuthenticatedUser } from '../common/types/auth';
 import { PrismaService } from '../prisma/prisma.service';
+import { CaseContextService, type ClaimVersionWithLines } from './case-context.service';
 import type { DecideCaseDto } from './dto/decide-case.dto';
 import type { ListCasesQuery } from './dto/list-cases.query';
 import { EvidenceIntegrityService } from './evidence-integrity.service';
@@ -65,8 +66,6 @@ const VIEW_EVENT_LIMIT = 25;
 // Bound on concurrent MinIO reads during one detail verification pass.
 const VERIFY_CONCURRENCY = 6;
 
-type ClaimVersionWithLines = Prisma.ClaimVersionGetPayload<{ include: { lines: true } }>;
-
 @Injectable()
 export class CasesService {
   private readonly logger = new Logger(CasesService.name);
@@ -75,6 +74,7 @@ export class CasesService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly integrity: EvidenceIntegrityService,
+    private readonly context: CaseContextService,
   ) {}
 
   /**
@@ -184,43 +184,11 @@ export class CasesService {
    * read sits below the detail route's `loading.tsx` boundary.)
    */
   async detail(id: string, actor: AuthenticatedUser): Promise<CaseDetail> {
-    const base = await this.prisma.case.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        episodeId: true,
-        status: true,
-        severity: true,
-        assignedTo: true,
-        summary: true,
-        createdAt: true,
-        updatedAt: true,
-        episode: {
-          select: { id: true, patientToken: true, facilityId: true, importBatchId: true },
-        },
-        // Folded into the authz read — one fewer round-trip than a parallel branch (it's a single 0..1 row).
-        decision: {
-          select: { verdict: true, rationale: true, decidedAt: true },
-        },
-      },
-    });
-    if (!base) throw new NotFoundException({ code: 'CASE_NOT_FOUND' });
-
+    // Phase 1+2: the shared, side-effect-free gather (throws 404). CaseContextService is the single source
+    // of truth for a case's read surface — the Claude summary (Prompt 13) grounds on the same gather, so it
+    // can't diverge from what's rendered here.
+    const { base, findings, claimVersions, evidence, links } = await this.context.gather(id);
     const episodeId = base.episode.id;
-    const [findings, claimVersions, evidence, links] = await Promise.all([
-      this.prisma.finding.findMany({ where: { caseId: id } }),
-      this.prisma.claimVersion.findMany({
-        where: { episodeId },
-        include: { lines: { orderBy: { sequence: 'asc' } } },
-        orderBy: [{ claimNo: 'asc' }, { version: 'asc' }],
-      }),
-      this.prisma.evidenceRecord.findMany({
-        where: { episodeId },
-        orderBy: { capturedAt: 'asc' },
-      }),
-      // All links for this episode's evidence (every link has an evidenceId; evidence belongs to one episode).
-      this.prisma.evidenceLink.findMany({ where: { evidence: { episodeId } } }),
-    ]);
 
     // The per-evidence MinIO verification (network-bound), the DB-only timeline, and the VIEW_CASE audit
     // write are all independent once existence is confirmed — run them concurrently so the timeline/audit

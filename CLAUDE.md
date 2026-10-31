@@ -12,8 +12,8 @@ on Docker Compose. Monorepo via **pnpm workspaces**.
 ## Layout
 
 ```
-apps/api                      NestJS API (TS)    (Prompt 05 — auth/RBAC/audit shell; 06 — import pipeline; 11 — cases read API + evidence download; 12 — reviewer decision write)
-apps/web                      Next.js web (TS)   (Prompt 10 — BFF portal: auth/cookie/DAL, role-aware shell, dashboard; 11 — case list/detail review screens; 12 — decision panel)
+apps/api                      NestJS API (TS)    (Prompt 05 — auth/RBAC/audit shell; 06 — import pipeline; 11 — cases read API + evidence download; 12 — reviewer decision write; 13 — grounded streaming Claude summary endpoint)
+apps/web                      Next.js web (TS)   (Prompt 10 — BFF portal: auth/cookie/DAL, role-aware shell, dashboard; 11 — case list/detail review screens; 12 — decision panel; 13 — streaming summary panel)
 packages/shared               shared TS enums/types
 packages/db (@tilik/db)       Prisma schema, migrations, typed client
 services/detector             Python worker      (Prompt 07 — outbox poller + tokenizer; 08 — repeat-billing + cloning; 09 — contradiction detector + Finding→Case aggregation) — NOT a workspace package
@@ -222,6 +222,40 @@ ESCALATED`, `NOT_FRAUD→CLOSED`, `NEEDS_MORE_INFO→PENDING`) — `verdictToSta
   3.42:1), buttons hover **darker** (`brand-green-800`); `MAX_RATIONALE_LENGTH` is a shared scalar in
   `@tilik/shared/constants`. **Known gap:** no segregation of duties (importer==decider; audit-detectable).
   Details: `docs/solutions/integration-issues/case-decision-flow-prompt12.md`.
+- **Claude evidence-summary (`apps/api/src/cases/summary.service.ts`, `apps/web/.../cases/[id]`, Prompt 13)
+  — the optional LLM aid: streaming, grounded, no-verdict.** `POST /v1/cases/:id/summary` (`@Roles(REVIEWER)`,
+  a tight per-route `@Throttle` 3/60s, **no `@Audit`**) streams a summary via the official **`@anthropic-ai/sdk`**
+  (`claude-opus-4-8`, `thinking:{type:'adaptive'}`, `output_config:{effort:'low'}`, `max_tokens:2048`;
+  `messages.stream(...)`→`finalMessage()`). Manual **`@Res()`** streaming with a **DEFERRED header flush** (on the
+  first `text` delta) so a pre-stream error (auth/rate-limit/refusal-with-empty-output) becomes a real HTTP
+  status the BFF relay maps — and **never rethrow after the flush** (the global `AllExceptionsFilter` does
+  `res.status().json()` → `ERR_HTTP_HEADERS_SENT`). Nest does **not** cancel the SDK on client disconnect — wire
+  `res.on('close')→stream.abort()` (the abort is `Anthropic.APIUserAbortError`; label it `aborted`, never
+  mislabel as `stream_error`). All DB reads run **outside** any tx (released before the stream opens — pool
+  `max:5`); the only tx is a brief post-stream `tx.case.updateMany({ data:{ summary } })` — **`updateMany`, not
+  `update()`** (an `update()` `P2025` inside the pg-adapter interactive tx corrupts the shared client,
+  prisma/orm#30374) — writing **only `summary`** (two-writer `Case`: never `severity`), then
+  `recordInTx('GENERATE_SUMMARY')` when `count===1`; **every attempt is audited** (success in-tx;
+  refusal/empty/stream_error/aborted/persist_failed/case_vanished via best-effort standalone `record()`).
+  Grounding/injection: the summary and `detail()` share the side-effect-free **`CaseContextService.gather`** (no
+  MinIO verify, no `VIEW_CASE`), so the summary can't diverge from the on-screen case; evidence is
+  **nonce-fenced** and **every** free-form interpolated value (`claimNo`/`inacbgCode`/line codes/payloads/file
+  names) runs through `scrubContent` (strips `[<>]` first) so no importer-influenceable value can forge a section
+  tag; `scrubPayload` **recurses** (nested identifiers); `countUnknownCitations` is a logged tripwire, not a
+  block; the summary is sliced by **code point**. `GENERATE_SUMMARY` is an **API-only inline literal** (not
+  `@tilik/shared/constants`); `MAX_SUMMARY_LENGTH` is a shared scalar. `ANTHROPIC_API_KEY` is **server-side
+  only** (kept off the web `WEB_ALLOW`), **never logged** (no `ANTHROPIC_LOG`, never log the raw SDK error — it
+  can carry the bearer). The **throttler keys on `req.user.userId`** (`ThrottlerModule` `getTracker`) — all API
+  traffic arrives from the BFF container IP, so IP keying would collapse to one global bucket. **Web:** a **Route
+  Handler** relay (not a Server Action — only a `Response` streams) forwards the cookie→Bearer, adds a
+  same-origin `Sec-Fetch-Site` CSRF check, returns **401 (not `redirect()`)** on a fetch POST (the client maps it
+  to a `/logout` navigation), and is **excluded from `proxy.ts`'s matcher**. The panel is **keyed on `caseId`**
+  (the App Router reuses the client instance across `/cases/[id]`), rAF-batches tokens, renders inert `pre-wrap`
+  JSX (never a markdown/HTML renderer), with a11y `role=log`/`aria-live=off` and a once-only `role=status`.
+  **Caddy** does not auto-flush `text/plain` (only `text/event-stream`) → `flush_interval -1` scoped to the
+  summary route (it ignores `X-Accel-Buffering`); verify streaming in a **browser through Caddy**, not curl. **No
+  migration** (`Case.summary` exists). Details:
+  `docs/solutions/integration-issues/case-evidence-summary-claude-streaming-prompt13.md`.
 - **Enums have one source of truth.** Values live in `@tilik/shared`, mirrored in `schema.prisma`;
   `packages/db/scripts/check-enum-parity.ts` fails `typecheck` on drift. Use `@tilik/shared` enums at
   DTO/validation/API boundaries, Prisma enums only at the persistence edge.

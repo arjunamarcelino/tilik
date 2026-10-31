@@ -3,6 +3,7 @@ import {
   IsEmail,
   IsEnum,
   IsInt,
+  IsNotEmpty,
   IsOptional,
   IsString,
   Max,
@@ -19,9 +20,9 @@ export enum NodeEnv {
 
 /**
  * The API's environment contract. Only the vars the API actually consumes are validated — the single
- * repo-root .env also carries the owner DATABASE_URL and the Anthropic key that the API must NOT use, so
- * unknown vars are ignored (never rejected). NODE_ENV has no default: an unset value fails the boot closed,
- * so production hardening (seed-password requirement, no dev stub) can never silently fall into dev mode.
+ * repo-root .env also carries the owner DATABASE_URL (which the API must NOT use), so unknown vars are
+ * ignored (never rejected). NODE_ENV has no default: an unset value fails the boot closed, so production
+ * hardening (seed-password requirement, no dev stub) can never silently fall into dev mode.
  */
 export class EnvironmentVariables {
   @IsEnum(NodeEnv)
@@ -69,6 +70,13 @@ export class EnvironmentVariables {
 
   @IsString()
   MINIO_BUCKET!: string;
+
+  // Claude API key for the evidence-summary endpoint (Prompt 13). Server-side only — never exposed to the
+  // web tier (apps/web/load-env.mjs prunes it out of the browser/render workers) and never logged. Required
+  // + non-empty so a blank key fails the boot closed rather than 401-ing mid-stream on the first request.
+  @IsString()
+  @IsNotEmpty()
+  ANTHROPIC_API_KEY!: string;
 
   @IsOptional()
   @IsEmail()

@@ -39,7 +39,18 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
     }),
     // In-memory, per-instance store. NOTE(Prompt 14): use a Redis ThrottlerStorage for multi-instance so
     // the per-credential login limit (auth.controller) isn't multiplied by the replica count.
-    ThrottlerModule.forRoot({ throttlers: [{ ttl: seconds(60), limit: 100 }] }),
+    ThrottlerModule.forRoot({
+      throttlers: [{ ttl: seconds(60), limit: 100 }],
+      // Key per authenticated user, not per IP. All API traffic arrives from the web BFF container, so an
+      // IP-keyed limiter collapses to ONE shared bucket across every reviewer (e.g. the tight 3/60s summary
+      // limit would cap the whole user base, not each actor). JwtAuthGuard runs before ThrottlerGuard, so
+      // req.user is populated on authenticated routes; fall back to IP for unauthenticated ones (login).
+      getTracker: (req: Record<string, unknown>) => {
+        const user = req.user as { userId?: string } | undefined;
+        const ip = req.ip as string | undefined;
+        return user?.userId ?? ip ?? 'unknown';
+      },
+    }),
     PrismaModule,
     AuditModule,
     UsersModule,

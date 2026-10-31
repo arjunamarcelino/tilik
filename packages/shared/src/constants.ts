@@ -37,3 +37,11 @@ export type AuditAction = (typeof AUDIT_ACTION)[keyof typeof AUDIT_ACTION];
  * can't silently diverge. A plain scalar (not a Record), so it does not affect the enum-parity guard.
  */
 export const MAX_RATIONALE_LENGTH = 2000;
+
+/**
+ * Max length (characters) of a cached case summary (Prompt 13). The model call is already bounded by a small
+ * `max_tokens`, but this is the server-side backstop before the text is written to `Case.summary` — it keeps
+ * the value off the hot read path (every case-detail load ships `summary`) regardless of model behaviour.
+ * A plain scalar (not a Record), so it does not affect the enum-parity guard.
+ */
+export const MAX_SUMMARY_LENGTH = 8000;
