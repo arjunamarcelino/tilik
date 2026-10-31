@@ -459,7 +459,11 @@ function verdictToStatus(verdict: `${Verdict}`): PrismaCaseStatus {
     case 'NOT_FRAUD':
       return PrismaCaseStatus.CLOSED; // cleared
     case 'NEEDS_MORE_INFO':
-      return PrismaCaseStatus.PENDING; // parked / inconclusive
+      // Parked / inconclusive. NOTE (intentional): all three verdicts are terminal — NEEDS_MORE_INFO still
+      // writes the one, immutable Decision and locks the case, so it cannot later be re-decided as
+      // CONFIRMED_FRAUD/NOT_FRAUD. This is a deliberate product choice (uniform decide-once). If "needs more
+      // info" should ever be revisitable, it must become a status-only transition that writes no Decision.
+      return PrismaCaseStatus.PENDING;
     default: {
       const exhaustive: never = verdict;
       return exhaustive;
