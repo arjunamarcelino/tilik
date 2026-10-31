@@ -1,16 +1,20 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Headers, Param, Query } from '@nestjs/common';
 import { Role } from '@tilik/shared';
-import type { CaseStats } from '@tilik/shared/contracts';
+import type { CaseDetail, CaseListResponse, CaseStats } from '@tilik/shared/contracts';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
+import type { AuthenticatedUser } from '../common/types/auth';
 import { CasesService } from './cases.service';
+import { ListCasesQuery } from './dto/list-cases.query';
 
 /**
- * Read-only case endpoints for the portal. Prompt 10 ships only aggregate stats; the full list/detail and
- * reviewer-owned writes (status/assignedTo/summary/Decision) land in Prompt 11 on this same module — which
- * must never write the detector-owned `severity`/existence (two-writer Case contract).
+ * Read-only case endpoints for the portal. The list + detail land here (Prompt 11); reviewer-owned writes
+ * (status/assignedTo/summary/Decision) are Prompt 12. This module must NEVER write the detector-owned
+ * `severity`/existence (two-writer Case contract) — everything here is a read.
  *
- * No @Audit: these are reads (audit is for state-changing actions). stats is aggregate (no specific case),
- * so it should never audit even later — per-case VIEW_CASE auditing is a Prompt-11 concern.
+ * No @Audit: these are GETs (the interceptor skips them by design). The per-case VIEW_CASE audit is a
+ * standalone insert inside CasesService.detail (a read has no domain tx to join). stats is aggregate — it
+ * never audits.
  */
 @Controller('cases')
 export class CasesController {
@@ -21,5 +25,22 @@ export class CasesController {
   @Roles(Role.REVIEWER)
   stats(): Promise<CaseStats> {
     return this.cases.stats();
+  }
+
+  @Get()
+  @Roles(Role.REVIEWER)
+  list(@Query() query: ListCasesQuery): Promise<CaseListResponse> {
+    return this.cases.list(query);
+  }
+
+  @Get(':id')
+  @Roles(Role.REVIEWER)
+  detail(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    // The portal BFF forwards this on a prefetch render so a phantom (un-opened) case view isn't audited.
+    @Headers('x-tilik-prefetch') prefetch?: string,
+  ): Promise<CaseDetail> {
+    return this.cases.detail(id, user, prefetch === '1');
   }
 }
