@@ -248,7 +248,7 @@ export class CasesService {
       findings: findings.map(toFindingDTO),
       claimVersions: claimVersions.map(toClaimVersionDTO),
       evidence: evidenceDtos,
-      evidenceLinks: links.map(toEvidenceLinkDTO),
+      evidenceLinks: links.map(toEvidenceLinkDTO).filter((l): l is EvidenceLinkDTO => l !== null),
       timeline,
     };
   }
@@ -359,16 +359,24 @@ function toEvidenceDTO(
   };
 }
 
+// The DB CHECK constrains EvidenceLink.relation to these, but Prisma types it as a bare `string`. Validate
+// at the boundary (don't `as`-cast) so an unexpected value degrades to a dropped link rather than a ZodError
+// that would escape getCase's catch and 500 the whole detail page.
+const EVIDENCE_RELATIONS: readonly EvidenceRelation[] = ['mendukung', 'bertentangan', 'sumber'];
+const isEvidenceRelation = (v: string): v is EvidenceRelation =>
+  (EVIDENCE_RELATIONS as readonly string[]).includes(v);
+
 function toEvidenceLinkDTO(link: {
   id: string;
   relation: string;
   evidenceId: string;
   claimVersionId: string | null;
   note: string | null;
-}): EvidenceLinkDTO {
+}): EvidenceLinkDTO | null {
+  if (!isEvidenceRelation(link.relation)) return null;
   return {
     id: link.id,
-    relation: link.relation as EvidenceRelation,
+    relation: link.relation,
     evidenceId: link.evidenceId,
     claimVersionId: link.claimVersionId,
     note: link.note,
