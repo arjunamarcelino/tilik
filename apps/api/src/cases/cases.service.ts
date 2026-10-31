@@ -212,32 +212,22 @@ export class CasesService {
       this.prisma.evidenceLink.findMany({ where: { evidence: { episodeId } } }),
     ]);
 
-    const evidenceDtos = await mapWithConcurrency(evidence, VERIFY_CONCURRENCY, async (e) => {
-      const integrity = await this.integrity.verify(e);
-      return toEvidenceDTO(e, integrity);
-    });
-
-    const timeline = await this.loadTimeline(
-      id,
-      episodeId,
-      base.episode.importBatchId,
-      claimVersions,
-      evidence.map((e) => e.id),
-    );
-
-    // Write VIEW_CASE after authz+existence are confirmed. Best-effort: a read must not fail because its
-    // access-log insert did — but log loudly so a systematic failure shows.
-    try {
-      await this.audit.record({
-        actor: actor.userId,
-        action: ACTION_VIEW_CASE,
-        targetType: 'Case',
-        targetId: id,
-        metadata: { severity: base.severity, status: base.status },
-      });
-    } catch (err) {
-      this.logger.error({ err, caseId: id, actor: actor.userId }, 'VIEW_CASE audit write failed');
-    }
+    // The per-evidence MinIO verification (network-bound), the DB-only timeline, and the VIEW_CASE audit
+    // write are all independent once existence is confirmed — run them concurrently so the timeline/audit
+    // don't wait behind the MinIO round-trips.
+    const [evidenceDtos, timeline] = await Promise.all([
+      mapWithConcurrency(evidence, VERIFY_CONCURRENCY, async (e) =>
+        toEvidenceDTO(e, await this.integrity.verify(e)),
+      ),
+      this.loadTimeline(
+        id,
+        episodeId,
+        base.episode.importBatchId,
+        claimVersions,
+        evidence.map((e) => e.id),
+      ),
+      this.recordView(id, actor, base.severity, base.status),
+    ]);
 
     return {
       id: base.id,
@@ -256,6 +246,27 @@ export class CasesService {
       evidenceLinks: links.map(toEvidenceLinkDTO).filter((l): l is EvidenceLinkDTO => l !== null),
       timeline,
     };
+  }
+
+  /** Best-effort VIEW_CASE access-log write. A read must not fail because its audit insert did — log and
+   * swallow so a systematic failure is visible. Returns void so it can ride the detail fan-out's Promise.all. */
+  private async recordView(
+    caseId: string,
+    actor: AuthenticatedUser,
+    severity: string,
+    status: string,
+  ): Promise<void> {
+    try {
+      await this.audit.record({
+        actor: actor.userId,
+        action: ACTION_VIEW_CASE,
+        targetType: 'Case',
+        targetId: caseId,
+        metadata: { severity, status },
+      });
+    } catch (err) {
+      this.logger.error({ err, caseId, actor: actor.userId }, 'VIEW_CASE audit write failed');
+    }
   }
 
   /**
