@@ -1,27 +1,7 @@
 'use client';
 
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { CaseStatus, DetectorType, Severity } from '@tilik/shared';
-
-// Label maps are inlined client-side (not imported from the server badge module). Keyed over the enum so
-// a new member is a compile error here too.
-const STATUS_LABEL: Record<CaseStatus, string> = {
-  [CaseStatus.OPEN]: 'Open',
-  [CaseStatus.IN_REVIEW]: 'In review',
-  [CaseStatus.PENDING]: 'Pending',
-  [CaseStatus.ESCALATED]: 'Escalated',
-  [CaseStatus.CLOSED]: 'Closed',
-};
-const SEVERITY_LABEL: Record<Severity, string> = {
-  [Severity.LOW]: 'Low',
-  [Severity.MEDIUM]: 'Medium',
-  [Severity.HIGH]: 'High',
-};
-const DETECTOR_LABEL: Record<DetectorType, string> = {
-  [DetectorType.REPEAT_BILLING]: 'Repeat billing',
-  [DetectorType.CLONING]: 'Cloning',
-  [DetectorType.PERTENTANGAN_BUKTI]: 'Contradiction',
-};
+import { DETECTOR_LABEL, SEVERITY_LABEL, STATUS_LABEL } from './labels';
 
 const FILTERS = [
   { name: 'status', label: 'Status', labels: STATUS_LABEL },

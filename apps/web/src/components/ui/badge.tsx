@@ -1,4 +1,5 @@
 import { CaseStatus, DetectorType, Severity } from '@tilik/shared';
+import { DETECTOR_LABEL, SEVERITY_LABEL, STATUS_LABEL } from '../cases/labels';
 
 type Tone = 'low' | 'med' | 'high' | 'neutral' | 'info';
 
@@ -27,31 +28,14 @@ const SEVERITY_TONE: Record<Severity, Tone> = {
   [Severity.MEDIUM]: 'med',
   [Severity.HIGH]: 'high',
 };
-const SEVERITY_LABEL: Record<Severity, string> = {
-  [Severity.LOW]: 'Low',
-  [Severity.MEDIUM]: 'Medium',
-  [Severity.HIGH]: 'High',
-};
 export function SeverityBadge({ severity }: { severity: Severity }) {
   return <Badge tone={SEVERITY_TONE[severity]}>{SEVERITY_LABEL[severity]}</Badge>;
 }
 
-const STATUS_LABEL: Record<CaseStatus, string> = {
-  [CaseStatus.OPEN]: 'Open',
-  [CaseStatus.IN_REVIEW]: 'In review',
-  [CaseStatus.PENDING]: 'Pending',
-  [CaseStatus.ESCALATED]: 'Escalated',
-  [CaseStatus.CLOSED]: 'Closed',
-};
 export function StatusBadge({ status }: { status: CaseStatus }) {
   return <Badge tone="neutral">{STATUS_LABEL[status]}</Badge>;
 }
 
-const DETECTOR_LABEL: Record<DetectorType, string> = {
-  [DetectorType.REPEAT_BILLING]: 'Repeat billing',
-  [DetectorType.CLONING]: 'Cloning',
-  [DetectorType.PERTENTANGAN_BUKTI]: 'Contradiction',
-};
 export function DetectorBadge({ detector }: { detector: DetectorType }) {
   return <Badge tone="info">{DETECTOR_LABEL[detector]}</Badge>;
 }
