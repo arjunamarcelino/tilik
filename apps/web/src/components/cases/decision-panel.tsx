@@ -22,8 +22,10 @@ const CONFIRM_COPY: Record<Verdict, string> = {
 };
 
 const CARD = 'rounded-lg border border-border bg-surface';
+// The decided-state heading receives programmatic focus after a decision (focus-restore), so it must show a
+// visible ring then — keep focus-visible instead of suppressing the outline.
 const HEADER =
-  'flex items-center gap-2 border-b border-border px-4 py-3 text-sm font-semibold text-brand-ink outline-none';
+  'flex items-center gap-2 border-b border-border px-4 py-3 text-sm font-semibold text-brand-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue';
 
 /**
  * The reviewer's decision surface (Prompt 12). Undecided → a verdict radio group + required rationale, gated
