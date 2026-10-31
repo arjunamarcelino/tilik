@@ -222,7 +222,7 @@ export function DecisionPanel({
             type="button"
             onClick={handleRecord}
             disabled={pending}
-            className="inline-flex h-11 items-center justify-center rounded-md bg-brand-green-700 px-4 font-semibold text-white transition-colors hover:bg-brand-green disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex h-11 items-center justify-center rounded-md bg-brand-green-700 px-4 font-semibold text-white transition-colors hover:bg-brand-green-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
             Record decision
           </button>
@@ -241,7 +241,7 @@ export function DecisionPanel({
                 type="submit"
                 disabled={pending}
                 aria-busy={pending}
-                className="inline-flex h-11 items-center justify-center rounded-md bg-brand-green-700 px-4 font-semibold text-white transition-colors hover:bg-brand-green disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex h-11 items-center justify-center rounded-md bg-brand-green-700 px-4 font-semibold text-white transition-colors hover:bg-brand-green-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {pending
                   ? 'Recording…'

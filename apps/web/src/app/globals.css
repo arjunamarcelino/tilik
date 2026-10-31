@@ -7,7 +7,8 @@
  */
 @theme {
   --color-brand-green: #00a050; /* action fill behind large/bold labels; white text is 3.42:1 (fails AA at 14px) */
-  --color-brand-green-700: #007a3d; /* darker green for hover + white text on buttons (~5:1, AA) */
+  --color-brand-green-700: #007a3d; /* green for white text on buttons (~5:1, AA) */
+  --color-brand-green-800: #00592d; /* button HOVER under white text — stays ≥7:1 AA (never lighten to #00a050) */
   --color-brand-navy: #204080; /* chrome: top bar, active nav (white text 9.97:1) */
   --color-brand-blue: #1878c6; /* links (underline), focus ring (4.62:1) */
   --color-brand-ink: #0c2340; /* primary text (15.79:1 on white) */
