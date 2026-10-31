@@ -231,7 +231,13 @@ export function DecisionPanel({
             aria-label="Confirm decision"
             className="flex flex-col gap-3 rounded-md border border-border-strong bg-canvas p-3"
           >
-            <p aria-live="assertive" className="text-sm font-medium text-brand-ink">
+            {/* aria-describedby (not just the live region): a region mounted WITH its content is
+                inconsistently announced, so tie the warning to the confirm button — it is read on focus. */}
+            <p
+              id="confirm-copy"
+              aria-live="assertive"
+              className="text-sm font-medium text-brand-ink"
+            >
               {verdict ? CONFIRM_COPY[verdict] : ''}
             </p>
             <div className="flex gap-3">
@@ -240,6 +246,7 @@ export function DecisionPanel({
                 type="submit"
                 disabled={pending}
                 aria-busy={pending}
+                aria-describedby="confirm-copy"
                 className="inline-flex h-11 items-center justify-center rounded-md bg-brand-green-700 px-4 font-semibold text-white transition-colors hover:bg-brand-green-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {pending
