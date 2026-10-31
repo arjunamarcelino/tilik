@@ -266,8 +266,9 @@ export class CasesService {
    * is a DB invariant (Decision.caseId is unique); a second decision → 409 CASE_ALREADY_DECIDED.
    *
    * Two-writer Case: this writes status/assignedTo (reviewer-owned) only — NEVER severity/existence, which
-   * are detector-owned. The DB can't enforce that (both callers are tilik_app); the severity regression
-   * test is the backstop.
+   * are detector-owned. The DB can't enforce that (both callers are tilik_app), and apps/api has no unit-test
+   * harness yet, so the guard today is code review + the end-to-end verification; an automated
+   * severity-not-written regression test is a follow-up.
    */
   async decide(id: string, actor: AuthenticatedUser, dto: DecideCaseDto): Promise<CaseDecision> {
     const kase = await this.prisma.case.findUnique({
