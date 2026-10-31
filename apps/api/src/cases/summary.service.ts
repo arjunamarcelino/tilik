@@ -128,14 +128,22 @@ export class SummaryService {
     try {
       message = await stream.finalMessage();
     } catch (err) {
-      // Post-flush: 200 is already sent, so we cannot change status — truncate the stream. Pre-flush: an
-      // auth/rate-limit/network error surfaces here before any token; throw a clean status the relay maps.
+      // The prompt already egressed to Claude by the time we're here, so trace every outcome (best-effort) —
+      // labelled 'aborted' for a client navigate-away (res.on('close') → stream.abort()) vs 'stream_error'
+      // for a genuine API/network failure, so a disconnect isn't mislabelled as a failure.
+      const aborted = err instanceof Anthropic.APIUserAbortError;
+      await this.recordAttempt(id, actor, aborted ? 'aborted' : 'stream_error');
       if (headersSent) {
-        this.logger.warn({ caseId: id }, 'summary stream errored mid-flight (truncated)');
+        // 200 is already sent — we cannot change status, so just truncate the (already-streamed) response.
+        this.logger.warn({ caseId: id, aborted }, 'summary stream ended early (truncated)');
         if (!res.writableEnded) res.end();
         return;
       }
-      await this.recordAttempt(id, actor, 'stream_error');
+      if (aborted) {
+        // Disconnected before any token — no status to surface and nothing rendered; close quietly.
+        if (!res.writableEnded) res.end();
+        return;
+      }
       this.logError('summary stream failed before first token', id, err);
       throw new ServiceUnavailableException({ code: 'SUMMARY_FAILED' });
     }
@@ -228,7 +236,7 @@ export class SummaryService {
   private async recordAttempt(
     caseId: string,
     actor: AuthenticatedUser,
-    outcome: 'refusal' | 'empty' | 'stream_error' | 'persist_failed',
+    outcome: 'refusal' | 'empty' | 'stream_error' | 'aborted' | 'persist_failed' | 'case_vanished',
   ): Promise<void> {
     try {
       await this.audit.record({
