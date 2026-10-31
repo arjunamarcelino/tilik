@@ -7,7 +7,23 @@
  * Types only — no runtime, no dependencies. The web app pins them at the trust boundary with zod
  * schemas annotated `satisfies z.ZodType<…>`, so a schema that drifts from these types fails to compile.
  */
-import type { CaseStatus, Role, Severity } from './enums';
+import type {
+  CaseStatus,
+  ClaimLineType,
+  ClaimStatus,
+  DetectorType,
+  EvidenceKind,
+  Role,
+  Severity,
+} from './enums';
+
+/**
+ * ISO-8601 UTC timestamp (e.g. "2026-10-31T12:00:00.000Z"). Dates cross JSON as strings, so every
+ * timestamp field below is typed as this alias — the API maps Prisma `Date`s with an explicit
+ * `.toISOString()`, and the web validates with `z.string().datetime()` (a `z.date()` schema would throw
+ * at `.parse()` on every response).
+ */
+export type IsoDateString = string;
 
 /** `GET /v1/auth/me` — the authenticated caller's safe profile (never passwordHash). */
 export interface Me {
@@ -32,4 +48,148 @@ export interface CaseStats {
   byStatus: Record<CaseStatus, number>;
   /** LOW/MEDIUM/HIGH, zero-filled — over OPEN cases only. */
   bySeverity: Record<Severity, number>;
+}
+
+// ── Prompt 11: case list + detail ────────────────────────────────────────────────────────────────
+
+/** EvidenceLink.relation — a plain CHECK-constrained string column, not an enum. */
+export type EvidenceRelation = 'mendukung' | 'bertentangan' | 'sumber';
+
+/**
+ * Content-hash verification verdict for one evidence record, recomputed at read time.
+ *   - verified     — file bytes hash to the recorded contentHash (tamper-evident ✓)
+ *   - mismatch     — bytes DON'T match → tampered
+ *   - unavailable  — the MinIO object couldn't be read (distinct from mismatch — operational, not tamper)
+ *   - display_only — payload-backed evidence: the stored hash is shown, not recomputed (its hash is over a
+ *                    canonical wrapper whose timestamp round-trip would false-mismatch)
+ * `download` on the record (not this field) tells file-backed vs payload-backed.
+ */
+export type EvidenceIntegrityStatus = 'verified' | 'mismatch' | 'unavailable' | 'display_only';
+
+export interface EvidenceIntegrity {
+  status: EvidenceIntegrityStatus;
+  /** The recorded hash (hex), the append-only DB authority — safe to display. */
+  contentHash: string;
+  hashAlgo: string;
+}
+
+/** `GET /v1/cases` — one row. `createdAt` is an ISO string (see IsoDateString). */
+export interface CaseListItem {
+  id: string;
+  episodeId: string;
+  severity: Severity;
+  status: CaseStatus;
+  /** Distinct detectors across the case's findings (badge set). */
+  detectors: DetectorType[];
+  findingCount: number;
+  createdAt: IsoDateString;
+}
+
+export interface CaseListResponse {
+  items: CaseListItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/** Human-readable detector output. `messages` is Indonesian reviewer text; `detail` is per-detector. */
+export interface FindingReasons {
+  messages: string[];
+  detail: Record<string, unknown>;
+}
+
+export interface FindingDTO {
+  id: string;
+  detector: DetectorType;
+  /** 0..1 — meaning differs per detector (cloning = cosine, repeat-billing = count); label it in the UI. */
+  score: number;
+  severity: Severity;
+  reasons: FindingReasons;
+  claimVersionId: string | null;
+}
+
+export interface ClaimLineDTO {
+  id: string;
+  type: ClaimLineType;
+  code: string;
+  sequence: number;
+  description: string | null;
+  /** Decimal serialized as a fixed-scale string. */
+  amount: string | null;
+}
+
+export interface ClaimVersionDTO {
+  id: string;
+  claimNo: string;
+  version: number;
+  inacbgCode: string;
+  amount: string;
+  status: ClaimStatus;
+  isCurrent: boolean;
+  submittedAt: IsoDateString;
+  lines: ClaimLineDTO[];
+}
+
+/**
+ * Flat shape (not a discriminated union) with one invariant: `download !== null` ⇔ file-backed ⇔ the record
+ * is downloadable/verifiable; `download === null` ⇔ payload-backed ⇔ `payload` carries the inline JSON.
+ * The runtime guards in the service/UI uphold it; kept flat deliberately (a union would ripple across every
+ * evidence consumer for marginal gain).
+ */
+export interface EvidenceRecordDTO {
+  id: string;
+  kind: EvidenceKind;
+  capturedAt: IsoDateString;
+  source: string | null;
+  ingestedBy: string | null;
+  integrity: EvidenceIntegrity;
+  /**
+   * File-backed descriptor, or null for payload-backed. `isImage` lets the UI render an inline <img> vs a
+   * download link. The portal builds the actual download URL from its own route — the API stays ignorant of
+   * portal routing (it never emits a web path).
+   */
+  download: { isImage: boolean } | null;
+  /** Present ⇔ payload-backed; the raw JSON blob (untrusted shape). Absent/null for file-backed records. */
+  payload?: unknown;
+}
+
+export interface EvidenceLinkDTO {
+  id: string;
+  relation: EvidenceRelation;
+  evidenceId: string;
+  claimVersionId: string | null;
+  note: string | null;
+}
+
+/** One audit-timeline entry. `actorKind` separates the detector (system) from a reviewer (human). */
+export type AuditActorKind = 'human' | 'system';
+export interface AuditEventDTO {
+  id: string;
+  action: string;
+  actorLabel: string;
+  actorKind: AuditActorKind;
+  targetType: string;
+  at: IsoDateString;
+}
+
+/** `GET /v1/cases/:id` — the full review surface for one case. */
+export interface CaseDetail {
+  id: string;
+  episodeId: string;
+  status: CaseStatus;
+  severity: Severity;
+  assignedTo: string | null;
+  summary: string | null;
+  createdAt: IsoDateString;
+  updatedAt: IsoDateString;
+  /** HMAC pseudonym — safe to surface; never a real patient id. */
+  patientToken: string;
+  facilityId: string;
+  findings: FindingDTO[];
+  claimVersions: ClaimVersionDTO[];
+  evidence: EvidenceRecordDTO[];
+  /** All evidence↔claim links; the UI flags `relation === 'bertentangan'` as contradictions. */
+  evidenceLinks: EvidenceLinkDTO[];
+  /** Chronological audit trail (import → detect → views), actor-labelled. */
+  timeline: AuditEventDTO[];
 }

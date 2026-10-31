@@ -1,0 +1,69 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { createHash } from 'node:crypto';
+import type { EvidenceIntegrity } from '@tilik/shared/contracts';
+import { MinioService } from '../minio/minio.service';
+
+/** The subset of an EvidenceRecord this service needs — decouples it from the Prisma row type. */
+export interface VerifiableEvidence {
+  objectKey: string | null;
+  contentHash: string;
+  hashAlgo: string;
+}
+
+const sha256Hex = (buf: Buffer): string => createHash('sha256').update(buf).digest('hex');
+
+/**
+ * The single home of the content-hash verification rule, shared by the case-detail read (verdict only)
+ * and the download route (needs the bytes). The comparison is ALWAYS against the record's `contentHash`
+ * — the append-only DB authority — never the object's `x-amz-meta-sha256`, which an attacker who can
+ * rewrite the bytes could also rewrite. Do not "optimize" to the object metadata; it would silently
+ * weaken the tamper-evidence claim.
+ *
+ * Verdicts are always computed live (no memo): for a tamper-evidence product an always-current answer is
+ * the honest one, and the objects are sub-KiB so re-hashing is cheap.
+ */
+@Injectable()
+export class EvidenceIntegrityService {
+  private readonly logger = new Logger(EvidenceIntegrityService.name);
+
+  constructor(private readonly minio: MinioService) {}
+
+  /** Verdict for the detail read. Payload-backed and non-sha256 records are display-only (no recompute). */
+  async verify(record: VerifiableEvidence): Promise<EvidenceIntegrity> {
+    const base = { contentHash: record.contentHash, hashAlgo: record.hashAlgo };
+
+    // Payload-backed evidence: its import hash is over a canonical {kind,source,capturedAt,payload} wrapper
+    // whose capturedAt round-trip would false-mismatch — so we show the stored hash, not a recompute.
+    if (!record.objectKey) return { status: 'display_only', ...base };
+    // Can't honestly recompute against a different algorithm.
+    if (record.hashAlgo !== 'sha256') return { status: 'display_only', ...base };
+
+    try {
+      const buf = await this.minio.getObjectBuffer(record.objectKey);
+      const status = sha256Hex(buf) === record.contentHash.toLowerCase() ? 'verified' : 'mismatch';
+      return { status, ...base };
+    } catch (err) {
+      // Operational failure (missing object / MinIO unreachable) — NOT a tamper signal.
+      this.logger.warn(
+        { err, objectKey: record.objectKey },
+        'evidence object unavailable for verify',
+      );
+      return { status: 'unavailable', ...base };
+    }
+  }
+
+  /**
+   * Load a file-backed object and verify it, returning the bytes for the download path. Throws if the record
+   * is not file-backed; a missing MinIO object bubbles as the client error (caller maps it to 404).
+   */
+  async loadForDownload(
+    record: VerifiableEvidence,
+  ): Promise<{ buffer: Buffer; verified: boolean; computed: string }> {
+    if (!record.objectKey) {
+      throw new Error('loadForDownload called for payload-backed evidence');
+    }
+    const buffer = await this.minio.getObjectBuffer(record.objectKey);
+    const computed = sha256Hex(buffer);
+    return { buffer, verified: computed === record.contentHash.toLowerCase(), computed };
+  }
+}

@@ -53,3 +53,32 @@ body {
   outline: 2px solid var(--color-brand-blue);
   outline-offset: 2px;
 }
+
+/* Case list: on narrow screens collapse the table to stacked cards. Each cell shows its column name from
+   the data-label attribute (headers are visually hidden but stay in the accessibility tree). */
+@media (max-width: 40rem) {
+  .case-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .case-table tr {
+    display: block;
+    border-top: 1px solid var(--color-border);
+    padding: 0.5rem 0;
+  }
+  .case-table td {
+    display: grid;
+    grid-template-columns: 7rem 1fr;
+    gap: 0.5rem;
+    padding: 0.35rem 1rem;
+  }
+  .case-table td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: var(--color-muted);
+  }
+}

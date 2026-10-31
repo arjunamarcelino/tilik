@@ -10,6 +10,10 @@ export interface StoredObject {
   sha256: string;
 }
 
+// Memory backstop for the read path: evidence parts are sub-KiB, so anything approaching this is anomalous.
+// Caps a single buffered download even if an oversized object ever slips past import (a DoS guard).
+const MAX_OBJECT_BYTES = 10 * 1024 * 1024;
+
 /**
  * Thin wrapper over the MinIO (S3) client for file-evidence storage.
  *
@@ -59,5 +63,28 @@ export class MinioService implements OnModuleInit {
       'x-amz-meta-sha256': sha256,
     });
     return { objectKey, sha256 };
+  }
+
+  /**
+   * Read an evidence object fully into memory. Buffered (not streamed) so the caller can hash the exact
+   * bytes BEFORE responding — the integrity verdict is known before the first byte ships, and the download
+   * path can throw a clean 409 on tamper. Enforces MAX_OBJECT_BYTES while reading so a hostile/oversized
+   * object can't exhaust memory. A missing key surfaces as the MinIO client's `NoSuchKey` error (the caller
+   * maps it to 404 / `unavailable`).
+   */
+  async getObjectBuffer(objectKey: string): Promise<Buffer> {
+    const stream = await this.client.getObject(this.bucket, objectKey);
+    const chunks: Buffer[] = [];
+    let total = 0;
+    for await (const chunk of stream) {
+      const buf = chunk as Buffer;
+      total += buf.length;
+      if (total > MAX_OBJECT_BYTES) {
+        stream.destroy();
+        throw new Error(`Evidence object exceeds ${MAX_OBJECT_BYTES} bytes`);
+      }
+      chunks.push(buf);
+    }
+    return Buffer.concat(chunks);
   }
 }
