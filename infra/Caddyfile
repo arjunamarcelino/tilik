@@ -4,14 +4,20 @@
 # real domain -> Caddy auto-provisions a Let's Encrypt cert (needs public :80/:443 + DNS)
 # Env placeholders ({$VAR:default}) are substituted at Caddy startup.
 {$TILIK_DOMAIN:localhost} {
-	# API first — `handle /v1/*` keeps the /v1 prefix (use handle_path only to strip it).
-	# flush_interval -1 disables response buffering so the evidence-summary token stream (Prompt 13,
-	# text/plain) reaches the web BFF incrementally — Caddy auto-flushes text/event-stream but NOT
-	# text/plain. Harmless for the small JSON + content-length binary responses this block also serves.
-	handle /v1/* {
+	# The evidence-summary token stream (Prompt 13, text/plain) must not be buffered, or the UI only shows
+	# the summary once it's fully generated — Caddy auto-flushes text/event-stream but NOT text/plain. Scope
+	# flush_interval -1 to JUST this route (evaluated before the general /v1/* handle), so the other API
+	# responses — small JSON and the content-length binary evidence download — keep default buffering.
+	@apisummary path_regexp apisummary ^/v1/cases/[^/]+/summary$
+	handle @apisummary {
 		reverse_proxy api:{$API_PORT:3001} {
 			flush_interval -1
 		}
+	}
+
+	# API — `handle /v1/*` keeps the /v1 prefix (use handle_path only to strip it).
+	handle /v1/* {
+		reverse_proxy api:{$API_PORT:3001}
 	}
 
 	# The BFF relay for the summary stream must also reach the browser unbuffered (browser -> web hop).
