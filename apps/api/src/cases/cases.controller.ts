@@ -47,6 +47,11 @@ export class CasesController {
 
   // The reviewer's verdict. @Roles is mandatory (RolesGuard fails open without it); ADMIN ⊇ REVIEWER.
   // No @Audit — decide() records its DECIDE event in-transaction (recordInTx).
+  //
+  // KNOWN GAP (no segregation of duties): POST /v1/imports is also @Roles(REVIEWER), and a case is scoped only
+  // by :id (not by who staged its episode), so one reviewer can both import an episode and decide its case —
+  // there is no four-eyes control. Accepted for the synthetic-data prototype; the DECIDE AuditEvent makes it
+  // detectable after the fact (same actor as the IMPORT event). A second-reviewer requirement is future work.
   @Post(':id/decision')
   @Roles(Role.REVIEWER)
   decide(
