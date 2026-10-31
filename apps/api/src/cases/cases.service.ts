@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 // Prisma enum VALUES (persistence edge) — distinct nominal type from @tilik/shared's enums, but identical
 // string members. Aliased so the shared enums below can keep their canonical names in the DTO mappers.
 import {
@@ -44,6 +44,11 @@ import { parseEvidenceRefs, parseReasons } from './finding-json';
 const ACTION_VIEW_CASE = 'VIEW_CASE';
 // DETECT is the one timeline action written by the Python worker (actor = worker id, not a user).
 const ACTION_DETECT = 'DETECT';
+// A detected content-hash mismatch on download — the product's core tamper event (API-only, inline literal).
+const ACTION_EVIDENCE_INTEGRITY_FAILED = 'EVIDENCE_INTEGRITY_FAILED';
+
+// Served content types, keyed by the object-key extension — never a client-declared MIME.
+const CONTENT_TYPE: Record<string, string> = { png: 'image/png', pdf: 'application/pdf' };
 
 // Default + max page size; applied here (not via DTO initializers, brittle under `whitelist`).
 const DEFAULT_PAGE_SIZE = 20;
@@ -251,6 +256,59 @@ export class CasesService {
       evidenceLinks: links.map(toEvidenceLinkDTO).filter((l): l is EvidenceLinkDTO => l !== null),
       timeline,
     };
+  }
+
+  /**
+   * Case-scoped evidence download: owns the lookup, the case↔episode BOLA check, the verify-before-stream,
+   * and the tamper audit (the controller is left with only HTTP/stream concerns). Returns the verified
+   * bytes + content type + a server-controlled filename, or throws a typed NotFound/Conflict. A mismatch is
+   * audited as EVIDENCE_INTEGRITY_FAILED and 409'd before any byte is returned.
+   */
+  async loadEvidenceForDownload(
+    caseId: string,
+    evidenceId: string,
+    actor: AuthenticatedUser,
+  ): Promise<{ buffer: Buffer; contentType: string; filename: string }> {
+    const kase = await this.prisma.case.findUnique({
+      where: { id: caseId },
+      select: { episodeId: true },
+    });
+    if (!kase) throw new NotFoundException({ code: 'CASE_NOT_FOUND' });
+
+    const evidence = await this.prisma.evidenceRecord.findUnique({
+      where: { id: evidenceId },
+      select: { episodeId: true, objectKey: true, contentHash: true, hashAlgo: true },
+    });
+    // 404 (not 403) on a cross-case or missing id — don't disclose existence outside the case context.
+    if (!evidence || evidence.episodeId !== kase.episodeId || evidence.objectKey === null) {
+      throw new NotFoundException({ code: 'EVIDENCE_NOT_FOUND' });
+    }
+
+    let loaded: { buffer: Buffer; verified: boolean; computed: string };
+    try {
+      loaded = await this.integrity.loadForDownload(evidence);
+    } catch {
+      // objectKey is set but the object isn't in storage — treat as not found (distinct from tamper).
+      throw new NotFoundException({ code: 'EVIDENCE_FILE_MISSING' });
+    }
+
+    if (!loaded.verified) {
+      // Tamper detected — the product's core event. Audit it (never the raw bytes) before refusing.
+      await this.audit.record({
+        actor: actor.userId,
+        action: ACTION_EVIDENCE_INTEGRITY_FAILED,
+        targetType: 'EvidenceRecord',
+        targetId: evidenceId,
+        metadata: { caseId, expected: evidence.contentHash, computed: loaded.computed },
+      });
+      throw new ConflictException({ code: 'EVIDENCE_INTEGRITY_FAILED' });
+    }
+
+    const ext = evidence.objectKey.split('.').pop()?.toLowerCase() ?? '';
+    const contentType = CONTENT_TYPE[ext] ?? 'application/octet-stream';
+    // Server-controlled, ASCII-safe filename — never reflect objectKey/user input into the header.
+    const filename = `evidence-${evidenceId}.${ext || 'bin'}`;
+    return { buffer: loaded.buffer, contentType, filename };
   }
 
   /**
