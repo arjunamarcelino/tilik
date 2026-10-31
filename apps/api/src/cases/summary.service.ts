@@ -49,7 +49,6 @@ interface GroundingContext {
   user: string;
   /** The case's real evidence ids — the allow-list the post-gen citation check validates against. */
   evidenceIds: Set<string>;
-  truncated: boolean;
 }
 
 /**
@@ -225,12 +224,9 @@ export class SummaryService {
       await this.recordAttempt(id, actor, 'case_vanished');
     }
 
-    if (!headersSent) {
-      // Defensive: with streaming the 'text' event fires before finalMessage resolves, so this is unreachable
-      // in practice — but if no token ever streamed yet we have text, flush it now rather than send nothing.
-      flushHead();
-      if (!res.writableEnded) res.write(summary);
-    }
+    // Success text already streamed to the client (the 'text' event fires before finalMessage resolves);
+    // flushHead is a no-op if already sent. Just close the stream.
+    flushHead();
     if (!res.writableEnded) res.end();
   }
 
@@ -369,7 +365,7 @@ function buildGroundingContext(
     'Ringkas kasus ini sesuai aturan. Setiap pernyataan faktual harus diawali evidence_id yang sah.',
   ].join('\n');
 
-  return { system: systemPrompt(), user, evidenceIds, truncated };
+  return { system: systemPrompt(), user, evidenceIds };
 }
 
 /** Recursively drop identifier-looking keys from a payload before it is serialised into the prompt. Recurses
