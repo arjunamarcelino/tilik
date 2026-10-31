@@ -48,7 +48,10 @@ export default function proxy(req: NextRequest) {
 }
 
 export const config = {
-  // Exclude static assets and the logout route (it manages the cookie itself). Keeps the proxy off
-  // _next internals so it isn't invoked on every asset request.
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|logout|.*\\.(?:svg|png|ico|txt)$).*)'],
+  // Exclude static assets, the logout route (it manages the cookie itself), and the evidence download route
+  // (it sets its own locked-down resource CSP + checks auth itself — the page nonce CSP must not apply to a
+  // binary). Keeps the proxy off _next internals so it isn't invoked on every asset request.
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|logout|.*/download$|.*\\.(?:svg|png|ico|txt)$).*)',
+  ],
 };
