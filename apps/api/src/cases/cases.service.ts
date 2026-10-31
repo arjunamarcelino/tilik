@@ -278,6 +278,11 @@ export class CasesService {
     if (!kase) throw new NotFoundException({ code: 'CASE_NOT_FOUND' });
     if (kase.decision) throw new ConflictException({ code: 'CASE_ALREADY_DECIDED' });
 
+    // priorStatus and the assign-if-unassigned test are pre-transaction reads. That's correct today because no
+    // concurrent writer mutates Case.status/assignedTo (the detector touches only severity/updatedAt); if one
+    // ever does, these become stale-read-based. The in-tx count===0 (below) is the real decide-once guard — the
+    // kase.decision pre-check above is only a friendly fast-path. Impact of a stale priorStatus is limited to
+    // audit-metadata accuracy (toAuditDTO never egresses metadata).
     const priorStatus = kase.status;
     const newStatus = verdictToStatus(dto.verdict);
     const decidedAt = new Date();
