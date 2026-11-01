@@ -290,7 +290,8 @@ infra/docker-compose.prod.yml up -d --build` runs the whole stack behind **Caddy
   target): Mode A drops Caddy, two Traefik path-domains (`/v1→api`, `/→web`, "Keep paths as-is"), git-push
   deploy replaces CI/CD; `exclude_from_hc` is omitted from the committed compose (non-standard → breaks
   `docker compose config`). **MinIO hardening is wired into prod `minio-init`**: the bucket is created
-  `--with-lock` (object-lock + versioning = tamper-evident storage) and a **least-privilege IAM user** is
+  `--with-lock` (object-lock capability + versioning — not hard WORM without a retention; the append-only
+  DB `contentHash` stays the authoritative tamper guard) and a **least-privilege IAM user** is
   provisioned from `MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY` (Get/Put + bucket-level ListBucket/GetBucketLocation
   for the api's `bucketExists`; no Delete, never root — so set them **distinct from `MINIO_ROOT_USER`**). No
   hard default-retention (would block re-import). Details: `docs/plans/2026-11-01-feat-vps-deployment-prod-compose-caddy-plan.md`.
