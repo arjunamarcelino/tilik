@@ -103,9 +103,10 @@ const BUTTON =
  *
  * Streaming hygiene: tokens are buffered in a ref and flushed to state once per animation frame (no render
  * storm at 40–80 tok/s); the fetch is cancelled on unmount / case change via an AbortController; the text
- * is rendered as inert JSX (pre-wrap) — never a markdown/HTML renderer, which would reintroduce XSS from
- * attacker-influenceable evidence content. The streaming region is role="log" + aria-live="off" (per-token
- * aria-live stutters screen readers); a separate role="status" region announces completion once.
+ * is rendered as inert, React-escaped JSX blocks (via parseSummaryBlocks), never a markdown/HTML renderer,
+ * which would reintroduce XSS from attacker-influenceable evidence content. The streaming region is
+ * role="log" + aria-live="off" (per-token aria-live stutters screen readers); a separate role="status"
+ * region announces completion once.
  */
 export function SummaryPanel({
   caseId,
