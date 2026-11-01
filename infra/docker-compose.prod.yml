@@ -1,0 +1,216 @@
+# Tilik PRODUCTION stack (Prompt 14) — the full app behind Caddy (TLS) on a single VPS.
+#
+# Bring-up (from this dir, via the wrapper so the repo-root .env is used for ${VAR} interpolation):
+#   ./compose.sh -f docker-compose.prod.yml up -d --build
+# Seed the demo (one-shot, idempotent):
+#   ./compose.sh -f docker-compose.prod.yml --profile seed run --rm seed
+#
+# Startup DAG: postgres(healthy) -> migrate(completed) -> api/detector; minio -> minio-init(completed) -> api;
+# api(healthy) -> seed. Caddy fronts web (/) + api (/v1/*). Only Caddy publishes host ports (80/443);
+# postgres/minio are reachable only on the internal network. Required secrets use ${VAR:?} so a missing
+# value fails `compose config`/`up` loudly. See ../DEPLOY.md.
+#
+# NOTE: Coolify's `exclude_from_hc:` one-shot marker is intentionally omitted — it is not a standard Compose
+# key and would fail `docker compose config`. Add it in Coolify's UI/overlay if deploying there (see DEPLOY.md).
+
+name: tilik-prod
+
+# Same digest-pinned Chainguard MinIO as the dev compose (server + mc client must match). Re-pin together.
+x-minio-image: &minio-image cgr.dev/chainguard/minio@sha256:e70b2b1e74d79457f808710483bd726ff364529ca30736eaa15a6ab547d3a5a7
+
+services:
+  # ── Datastores ────────────────────────────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16.15-alpine3.24
+    restart: unless-stopped
+    security_opt: ['no-new-privileges:true']
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: tilik
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env} # consumed by postgres/init/01-app-role.sh
+    volumes:
+      - tilik-pgdata:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro # runs once, on first init of an empty volume
+    # No published ports in prod — Postgres is reachable only on the internal network.
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    mem_limit: 768m # starting point for a ~4 GB box — tune under load; protect this one first (data loss on OOM)
+
+  minio:
+    image: *minio-image
+    restart: unless-stopped
+    security_opt: ['no-new-privileges:true']
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
+    volumes:
+      - tilik-minio-data:/data
+    # No published ports — S3 API + console stay on the internal network. (See DEPLOY.md to harden with a
+    # scoped service-account key + bucket object-lock/versioning instead of the root creds the api uses.)
+    mem_limit: 512m
+
+  minio-init:
+    image: *minio-image
+    depends_on:
+      minio:
+        condition: service_started
+    environment:
+      MINIO_BUCKET: ${MINIO_BUCKET:-tilik-evidence}
+      MC_CONFIG_DIR: /tmp/.mc
+      MC_HOST_local: http://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@minio:9000
+    entrypoint:
+      - sh
+      - -c
+      - >
+        mc ready local &&
+        mc mb --ignore-existing local/"$${MINIO_BUCKET}" &&
+        echo "bucket ready: $${MINIO_BUCKET}"
+    restart: on-failure
+
+  # ── Migrations (one-shot, OWNER) ────────────────────────────────────────────────────────────────────
+  # Runs `prisma migrate deploy && db:grant` as the schema owner, then exits 0. api/detector gate on its
+  # completion. The ONLY service that gets the owner DATABASE_URL. db:grant runs every deploy (P12/P13 ship
+  # no migration, so a migration-gated grant would skip the Decision/append-only REVOKEs).
+  migrate:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+      target: migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?set the OWNER DATABASE_URL in .env}
+      TZ: UTC
+    restart: 'no'
+
+  # ── Application services ─────────────────────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+      target: runtime
+    restart: unless-stopped
+    init: true
+    security_opt: ['no-new-privileges:true']
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: production
+      API_PORT: ${API_PORT:-3001}
+      APP_DATABASE_URL: ${APP_DATABASE_URL:?set the NON-OWNER APP_DATABASE_URL in .env}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET (>=44 chars) in .env}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-60m}
+      CORS_ORIGIN: ${CORS_ORIGIN:?set CORS_ORIGIN=https://your-domain in .env}
+      PATIENT_TOKEN_HMAC_KEY: ${PATIENT_TOKEN_HMAC_KEY:?set PATIENT_TOKEN_HMAC_KEY (rotate-never) in .env}
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?set MINIO_ACCESS_KEY in .env}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?set MINIO_SECRET_KEY in .env}
+      MINIO_BUCKET: ${MINIO_BUCKET:-tilik-evidence}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY in .env}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:?set SEED_ADMIN_EMAIL in .env}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:?prod boot requires SEED_ADMIN_PASSWORD}
+      SEED_REVIEWER_EMAIL: ${SEED_REVIEWER_EMAIL:?set SEED_REVIEWER_EMAIL in .env}
+      SEED_REVIEWER_PASSWORD: ${SEED_REVIEWER_PASSWORD:?prod boot requires SEED_REVIEWER_PASSWORD}
+      TZ: UTC
+    mem_limit: 512m
+    # Readiness (for seed + Caddy) comes from the image's baked HEALTHCHECK on /health.
+
+  detector:
+    build:
+      context: ..
+      dockerfile: services/detector/Dockerfile
+    restart: unless-stopped
+    init: true
+    security_opt: ['no-new-privileges:true']
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      APP_DATABASE_URL: ${APP_DATABASE_URL:?set the NON-OWNER APP_DATABASE_URL in .env}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      TZ: UTC
+    mem_limit: 768m # sklearn + numpy + scipy; TF-IDF corpus build spikes — the heaviest runtime
+
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+      args:
+        # Inlined into client bundles at build time; the BFF also reads it server-side at runtime. Internal.
+        NEXT_PUBLIC_API_URL: http://api:3001
+    restart: unless-stopped
+    init: true
+    security_opt: ['no-new-privileges:true']
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: http://api:3001 # server-side BFF target over the internal network
+      TZ: UTC
+    mem_limit: 512m
+
+  # ── Edge (TLS) ────────────────────────────────────────────────────────────────────────────────────────
+  # The ONLY service that publishes host ports. Auto-TLS via Let's Encrypt for a real TILIK_DOMAIN; the
+  # internal CA for localhost. On Coolify, drop this service and let Traefik be the edge (see DEPLOY.md).
+  caddy:
+    image: caddy:2.11-alpine
+    restart: unless-stopped
+    security_opt: ['no-new-privileges:true']
+    depends_on:
+      - api
+      - web
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      TILIK_DOMAIN: ${TILIK_DOMAIN:-localhost}
+      API_PORT: ${API_PORT:-3001}
+      WEB_PORT: '3000'
+      ACME_EMAIL: ${ACME_EMAIL:-}
+      ACME_CA: ${ACME_CA:-https://acme-v02.api.letsencrypt.org/directory}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - tilik-caddy-data:/data # certs/keys/ACME account — MUST persist or every redeploy re-issues (LE limits)
+      - tilik-caddy-config:/config
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:80/healthz']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    mem_limit: 128m
+
+  # ── Demo seed (one-shot, profile) ─────────────────────────────────────────────────────────────────────
+  # Not in the default `up`. Run on demand:  ./compose.sh -f docker-compose.prod.yml --profile seed run --rm seed
+  # Generates the frozen bundle (baked at build) and POSTs it to the api; idempotent (replays on re-run).
+  seed:
+    build:
+      context: ..
+      dockerfile: infra/seed.Dockerfile
+    profiles: ['seed']
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      SEED_API_BASE: http://api:3001
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:?set SEED_ADMIN_EMAIL in .env}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:?set SEED_ADMIN_PASSWORD in .env}
+      TZ: UTC
+    restart: 'no'
+
+volumes:
+  tilik-pgdata:
+  tilik-minio-data:
+  tilik-caddy-data:
+  tilik-caddy-config:

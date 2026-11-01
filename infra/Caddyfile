@@ -3,7 +3,34 @@
 # localhost   -> Caddy serves HTTPS via its internal (locally-trusted) CA
 # real domain -> Caddy auto-provisions a Let's Encrypt cert (needs public :80/:443 + DNS)
 # Env placeholders ({$VAR:default}) are substituted at Caddy startup.
+
+# Global options. acme_ca lets DEPLOY.md point at the Let's Encrypt STAGING CA for dry runs so repeated
+# failed deploys don't burn the prod rate limit (set ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory).
+# admin is pinned to loopback (it can rewrite the running config / re-issue certs). An ACME account `email`
+# is optional (LE provisions without one); add `email you@domain` here for expiry notices if you want them.
+{
+	acme_ca {$ACME_CA:https://acme-v02.api.letsencrypt.org/directory}
+	admin 127.0.0.1:2019
+}
+
 {$TILIK_DOMAIN:localhost} {
+	# Edge security headers. CSP is intentionally NOT set here — the web app emits a PER-REQUEST NONCE CSP
+	# (proxy.ts); a static one would overwrite it and break hydration. `?` = set-only-if-absent, so the
+	# app's own headers (helmet on /v1, next.config on web) always win; Caddy only fills gaps (notably HSTS,
+	# which belongs at the TLS-terminating edge). `-Server` strips the upstream server banner.
+	header {
+		?Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		?X-Content-Type-Options nosniff
+		?X-Frame-Options DENY
+		?Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	# Liveness for the Compose healthcheck — answers before any certificate exists.
+	handle /healthz {
+		respond "ok" 200
+	}
+
 	# The evidence-summary token stream (Prompt 13, text/plain) must not be buffered, or the UI only shows
 	# the summary once it's fully generated — Caddy auto-flushes text/event-stream but NOT text/plain. Scope
 	# flush_interval -1 to JUST this route (evaluated before the general /v1/* handle), so the other API
