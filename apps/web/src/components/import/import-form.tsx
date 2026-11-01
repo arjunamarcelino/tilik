@@ -64,7 +64,7 @@ export function ImportForm() {
             />
             <p id="manifest-hint" className="text-xs text-muted">
               The combined records bundle with <code>episodes</code>, <code>claimVersions</code>,{' '}
-              <code>evidenceRecords</code> and <code>evidenceLinks</code> arrays — not the generator{' '}
+              <code>evidenceRecords</code> and <code>evidenceLinks</code> arrays, not the generator{' '}
               <code>manifest.json</code> (that one carries ground-truth labels).
             </p>
           </div>
@@ -131,7 +131,7 @@ function ImportSummary({
 }) {
   const { summary, rejected, status, batchId } = result;
   const headline = replayed
-    ? 'This bundle was already imported — showing the recorded result.'
+    ? 'This bundle was already imported. Showing the recorded result.'
     : status === 'PARTIAL'
       ? 'Imported with some records rejected.'
       : 'Import complete.';

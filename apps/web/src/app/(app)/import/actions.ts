@@ -68,7 +68,7 @@ export async function runImport(_prev: ImportState, formData: FormData): Promise
       kind: 'error',
       message:
         'That file is not an importable bundle. Upload the combined records manifest with episodes, ' +
-        'claimVersions, evidenceRecords and evidenceLinks arrays — not the generator bundle manifest.json.',
+        'claimVersions, evidenceRecords and evidenceLinks arrays, not the generator bundle manifest.json.',
     };
   }
 
@@ -133,13 +133,13 @@ export async function runImport(_prev: ImportState, formData: FormData): Promise
   if (res.status === 409) {
     return {
       kind: 'error',
-      message: 'An identical import is already in progress — wait a moment and try again.',
+      message: 'An identical import is already in progress. Wait a moment and try again.',
     };
   }
   if (res.status === 400) {
     return {
       kind: 'error',
-      message: 'The import was rejected as invalid — check the manifest and try again.',
+      message: 'The import was rejected as invalid. Check the manifest and try again.',
     };
   }
   if (!res.ok) {

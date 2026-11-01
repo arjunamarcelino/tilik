@@ -36,7 +36,7 @@ export async function GET(
   if (upstream.status === 404) notFound();
   if (upstream.status === 409) {
     return new Response(
-      'Evidence failed its integrity check — the file may have been tampered with.',
+      'Evidence failed its integrity check. The file may have been tampered with.',
       {
         status: 409,
       },

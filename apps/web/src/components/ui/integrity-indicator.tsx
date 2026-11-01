@@ -14,7 +14,7 @@ const META: Record<
     alert: false,
   },
   mismatch: {
-    label: 'Hash mismatch — tampered',
+    label: 'Hash mismatch: tampered',
     glyph: '⚠',
     cls: 'bg-sev-high-bg text-sev-high',
     alert: true,

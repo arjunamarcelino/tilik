@@ -215,7 +215,7 @@ export function DecisionPanel({
           />
           <div className="flex items-center justify-between">
             <p id="rationale-hint" className="text-xs text-muted">
-              Explain your reasoning — recorded in the audit trail.
+              Explain your reasoning (recorded in the audit trail).
             </p>
             {/* Static counter — no aria-live (dynamically flipping politeness is inconsistently announced and
                 chatty); it's in the textarea's aria-describedby, so a screen reader reads it on focus. */}
@@ -277,7 +277,7 @@ export function DecisionPanel({
               >
                 {pending
                   ? 'Recording…'
-                  : `Yes — ${verdict ? VERDICT_LABEL[verdict].toLowerCase() : ''}`}
+                  : `Yes, ${verdict ? VERDICT_LABEL[verdict].toLowerCase() : ''}`}
               </button>
               <button
                 type="button"

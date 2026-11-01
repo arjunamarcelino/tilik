@@ -10,7 +10,7 @@ import { Timeline } from '@/components/cases/timeline';
 import { Role } from '@tilik/shared';
 import { getCase, requireRole } from '@/lib/dal';
 
-export const metadata: Metadata = { title: 'Case — Tilik' };
+export const metadata: Metadata = { title: 'Case | Tilik' };
 
 export default async function CaseDetailPage({ params }: { params: Promise<{ id: string }> }) {
   await requireRole(Role.REVIEWER);
