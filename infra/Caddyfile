@@ -19,12 +19,15 @@
 	# app's own headers (helmet on /v1, next.config on web) always win; Caddy only fills gaps (notably HSTS,
 	# which belongs at the TLS-terminating edge). `-Server` strips the upstream server banner.
 	header {
-		?Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		?X-Content-Type-Options nosniff
 		?X-Frame-Options DENY
 		?Referrer-Policy strict-origin-when-cross-origin
 		-Server
 	}
+	# HSTS only for a real domain — on the localhost internal-CA demo path it would pin HSTS for `localhost`
+	# (and subdomains) for a year, breaking other plain-HTTP localhost dev servers. Skipped when host=localhost.
+	@realhost not host localhost 127.0.0.1
+	header @realhost ?Strict-Transport-Security "max-age=31536000; includeSubDomains"
 
 	# Liveness for the Compose healthcheck — answers before any certificate exists.
 	handle /healthz {
