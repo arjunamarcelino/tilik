@@ -30,16 +30,15 @@ export function ImportForm() {
   const errorRef = useRef<HTMLParagraphElement>(null);
   const resultRef = useRef<HTMLDivElement>(null);
 
-  // Clear the file selection after a successful import so a follow-up submit can't silently re-send the
-  // previous bundle, and move focus to the result region so a keyboard/SR user lands on the outcome.
+  // On each result: a success clears the file selection (so a follow-up submit can't silently re-send the
+  // previous bundle) and moves focus to the result; an error moves focus to the alert. One effect, one dep.
   useEffect(() => {
     if (state.kind === 'success') {
       formRef.current?.reset();
       resultRef.current?.focus();
+    } else if (state.kind === 'error') {
+      errorRef.current?.focus();
     }
-  }, [state]);
-  useEffect(() => {
-    if (state.kind === 'error') errorRef.current?.focus();
   }, [state]);
 
   const inputClass =
