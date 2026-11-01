@@ -175,10 +175,12 @@ The prod `minio-init` extends the evidence-integrity guarantee to storage automa
   `MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY` with a policy allowing only `s3:GetObject`/`s3:PutObject` on the
   bucket (+ bucket-level `ListBucket`/`GetBucketLocation` for the api's `bucketExists` probe) — **no**
   `DeleteObject`, no bucket admin, never the root creds. So in `.env` these two vars **must be distinct from
-  `MINIO_ROOT_USER`** (secret ≥8 chars). A compromised api therefore can't wipe or rewrite every object.
-  **Verify** after deploy (from a transient mc container on the stack network):
+  `MINIO_ROOT_USER`** (secret ≥8 chars). A compromised api therefore can't delete objects (no DeleteObject)
+  or administer the bucket. **Verify** after deploy (the Chainguard minio image bundles `mc` + `sh`; Docker
+  Hub's `minio/mc` was retired — use the same mirror as the stack):
   ```bash
-  docker run --rm --network tilik-prod_default --entrypoint sh minio/mc -c \
+  docker run --rm --network tilik-prod_default --entrypoint sh \
+    cgr.dev/chainguard/minio@sha256:e70b2b1e74d79457f808710483bd726ff364529ca30736eaa15a6ab547d3a5a7 -c \
     'mc alias set m http://minio:9000 "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY" && mc rm m/tilik-evidence/anything 2>&1 | grep -qi "access denied" && echo "DELETE denied — scoped OK"'
   ```
 - **Bucket WORM (built in)**: the bucket is created `--with-lock`, which enables object-lock capability +
@@ -207,7 +209,8 @@ C start api detector
 ```
 
 Restore onto a **fresh** volume (roles are cluster-level, recreated by `01-app-role.sh`), `pg_restore`
-**without `--clean`** (append-only triggers block it), then re-run `migrate` for `db:grant`, then restore the
+**without `--clean`** (a fresh DB has nothing to drop, and the append-only `ENABLE ALWAYS` triggers block
+the TRUNCATE that `--clean` would otherwise attempt), then re-run `migrate` for `db:grant`, then restore the
 matching MinIO snapshot.
 
 ---
