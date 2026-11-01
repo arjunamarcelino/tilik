@@ -177,7 +177,9 @@ services:
       context: ..
       dockerfile: apps/web/Dockerfile
       args:
-        # Inlined into client bundles at build time; the BFF also reads it server-side at runtime. Internal.
+        # Next INLINES NEXT_PUBLIC_* at BUILD time into both client and server bundles, so the BFF reads the
+        # baked literal — not a runtime env. That's why it's a build arg here (and NOT a runtime env below:
+        # a runtime value would be dead). Internal hostname; the browser never calls it (pure BFF).
         NEXT_PUBLIC_API_URL: http://api:3001
     restart: unless-stopped
     init: true
@@ -187,7 +189,6 @@ services:
         condition: service_healthy
     environment:
       NODE_ENV: production
-      NEXT_PUBLIC_API_URL: http://api:3001 # server-side BFF target over the internal network
       TZ: UTC
     cpus: 1.0
 
