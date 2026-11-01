@@ -125,6 +125,7 @@ services:
       context: ..
       dockerfile: apps/api/Dockerfile
       target: runtime
+    image: tilik-prod-api:latest # tagged so the one-shot `seed` image can reuse it (FROM) instead of rebuilding
     restart: unless-stopped
     init: true
     security_opt: ['no-new-privileges:true']

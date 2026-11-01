@@ -277,8 +277,9 @@ infra/docker-compose.prod.yml up -d --build` runs the whole stack behind **Caddy
   target (the unpruned build stage — keeps the Prisma CLI devDep + `grant-app.sql` at the monorepo-relative
   path — one-shot `migrate deploy && db:grant`, the **only** owner-`DATABASE_URL` service, runs **every**
   deploy); `apps/web/Dockerfile` ships Next **standalone**; `services/detector/Dockerfile` is a venv-copy
-  slim image; `infra/seed.Dockerfile` bakes the **frozen** synthetic bundle then runs the compiled
-  `import-seed` against `SEED_API_BASE` (`--profile seed`, idempotent). All glibc **bookworm-slim** (Prisma's
+  slim image; `infra/seed.Dockerfile` **reuses the api image** (`FROM tilik-prod-api:latest`, tagged on the
+  `api` service) + a **frozen** baked bundle and runs the compiled `import-seed` against `SEED_API_BASE`
+  (`--profile seed`, idempotent; build api first). All glibc **bookworm-slim** (Prisma's
   schema engine + `generate` dislike musl; the api runtime uses the pg driver adapter = pure JS, no engine).
   **Next standalone broke the root-`.env` preload**: `load-env.mjs` now loads via Node's built-in
   `process.loadEnvFile` (not `@next/env`'s memoising `loadEnvConfig`, whose cached file-list made `next build`

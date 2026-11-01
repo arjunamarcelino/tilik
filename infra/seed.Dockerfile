@@ -1,12 +1,16 @@
 # syntax=docker/dockerfile:1
 # Tilik one-shot demo seed. Build context is the REPO ROOT.  docker build -f infra/seed.Dockerfile -t tilik-seed .
 #
-# Determinism is captured at BUILD time: a Python stage generates the synthetic bundle once (PYTHONHASHSEED=0,
-# --seed 42, pinned Faker) and freezes it into the image, so every run replays the SAME manifest hash via the
-# importer's Idempotency-Key. A Node stage carries the COMPILED importer (no tsx — a dev dep) which POSTs the
-# frozen bundle to the api over the Compose network (SEED_API_BASE).
+# REUSES the already-built api runtime image instead of recompiling the workspace: the api image already
+# ships the compiled dist/scripts/import-seed.js + its pruned prod node_modules (incl. dotenv) and runs as
+# non-root `node`. So the seed image is just "api image + a frozen synthetic bundle". This requires the api
+# image to EXIST FIRST — `./compose.sh -f docker-compose.prod.yml build api` (or `up -d --build`) tags it
+# `tilik-prod-api:latest`; then `--profile seed run --rm seed` builds this. (Override API_IMAGE to repoint.)
+#
+# Determinism: the bundle is generated once at build (PYTHONHASHSEED=0, --seed 42, pinned Faker) and frozen
+# into the image, so re-running replays the same manifest hash via the importer's Idempotency-Key.
 
-ARG NODE_IMAGE=node:22-bookworm-slim
+ARG API_IMAGE=tilik-prod-api:latest
 
 # ── bundle: generate the frozen synthetic data (deterministic) ───────────────────────────────────────
 FROM python:3.11-slim-bookworm AS bundle
@@ -16,31 +20,10 @@ COPY data/synthetic/ ./
 RUN pip install --no-cache-dir . \
  && python generate.py --episodes 60 --seed-fraud --seed 42 --out /bundle
 
-# ── importer: build the compiled import-seed script + its pruned prod node_modules ───────────────────
-FROM ${NODE_IMAGE} AS importer
-ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH
-RUN npm i -g pnpm@10.29.2
-WORKDIR /app
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
-COPY packages/shared/package.json packages/shared/
-COPY packages/db/package.json packages/db/prisma.config.ts packages/db/
-COPY packages/db/prisma/ packages/db/prisma/
-COPY apps/api/package.json apps/api/
-COPY apps/web/package.json apps/web/
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm fetch
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install -r --offline --frozen-lockfile
-COPY . .
-RUN pnpm --filter @tilik/shared build \
- && pnpm --filter @tilik/db build \
- && pnpm --filter @tilik/api build \
- && pnpm --filter @tilik/api --prod deploy /prod/api
-
-# ── runtime: Node runs the compiled importer against the baked bundle ────────────────────────────────
-FROM ${NODE_IMAGE} AS runtime
-ENV NODE_ENV=production TZ=UTC BUNDLE_DIR=/bundle
-WORKDIR /app
-COPY --from=importer --chown=node:node /prod/api ./
+# ── runtime: the api image + the baked bundle, running the compiled importer ─────────────────────────
+FROM ${API_IMAGE} AS runtime
+ENV BUNDLE_DIR=/bundle
 COPY --from=bundle --chown=node:node /bundle /bundle
-USER node
-# SEED_API_BASE (http://api:3001) + SEED_ADMIN_EMAIL/PASSWORD come from compose env. Idempotent re-runs.
+# NODE_ENV/TZ/WORKDIR(/app)/USER(node) are inherited from the api image. SEED_API_BASE + SEED_ADMIN_* come
+# from compose env. Idempotent re-runs (same frozen bundle → same Idempotency-Key).
 CMD ["node", "dist/scripts/import-seed.js"]

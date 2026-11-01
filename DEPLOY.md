@@ -100,10 +100,12 @@ cd infra
 ./compose.sh -f docker-compose.prod.yml --profile seed run --rm seed
 ```
 
-The seed image carries a **frozen** synthetic bundle (generated at build with `--seed 42`,
-`PYTHONHASHSEED=0`) and POSTs it to the api. Re-running **replays** (same manifest → same
-`Idempotency-Key`) — no duplicates. (Regenerating the bundle with different content would produce a new
-key and a fresh import; the bundle is frozen on purpose.)
+The seed image **reuses the already-built api image** (`FROM tilik-prod-api:latest`) plus a **frozen**
+synthetic bundle (generated at build with `--seed 42`, `PYTHONHASHSEED=0`), so it adds no second workspace
+compile. It therefore requires the api image to exist first — step 4's `up -d --build` (or
+`compose build api`) tags it; run the seed only after. It POSTs the bundle to the api; re-running **replays**
+(same manifest → same `Idempotency-Key`) — no duplicates. (Regenerating the bundle with different content
+would produce a new key and a fresh import; the bundle is frozen on purpose — see §8 note on rebuilds.)
 
 ---
 
