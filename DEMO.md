@@ -5,8 +5,9 @@ over-flagged.** Assumes the stack is deployed and seeded (see `DEPLOY.md` §4–
 
 **Before you start**
 
-- Portal: `https://<TILIK_DOMAIN>`. On a real domain the cert is trusted; with `TILIK_DOMAIN=localhost` the
-  internal-CA cert triggers a one-time browser warning (expected — click through).
+- Portal: **https://tilik.techjuna.cloud** (the deployed demo; `TILIK_DOMAIN=tilik.techjuna.cloud`). On a
+  real domain the Let's Encrypt cert is trusted; a local `TILIK_DOMAIN=localhost` build uses an internal-CA
+  cert that triggers a one-time browser warning (expected — click through).
 - Log in as the reviewer (`SEED_REVIEWER_EMAIL` / its password).
 - Have the Anthropic key working (the grounded summary is step 5) — confirm `claude-opus-4-8` is enabled.
 

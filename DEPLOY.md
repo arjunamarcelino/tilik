@@ -54,7 +54,7 @@ Startup order is enforced by `depends_on`: `postgres (healthy) → migrate (comp
 All secrets come from a single repo-root `.env` on the host — **never committed**.
 
 ```bash
-git clone <repo> tilik && cd tilik
+git clone https://github.com/arjunamarcelino/tilik.git tilik && cd tilik
 cp infra/.env.example .env
 chmod 600 .env            # owner-only
 ```
@@ -74,8 +74,8 @@ Fill in every value (generate secrets with `openssl rand -base64 32`). Required 
 | `ANTHROPIC_API_KEY`                              | server-side only; never logged                                                                                               |
 | `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`       | prod boot **requires** the password or the api refuses to seed                                                               |
 | `SEED_REVIEWER_EMAIL` / `SEED_REVIEWER_PASSWORD` | same                                                                                                                         |
-| `TILIK_DOMAIN`                                   | your FQDN (or `localhost` for an internal-CA test)                                                                           |
-| `CORS_ORIGIN`                                    | `https://<your-domain>` (set literally — dotenv does not interpolate)                                                        |
+| `TILIK_DOMAIN`                                   | your FQDN — the deployed demo uses `tilik.techjuna.cloud` (or `localhost` for an internal-CA test)                           |
+| `CORS_ORIGIN`                                    | the public portal origin, e.g. `https://tilik.techjuna.cloud` (set literally — dotenv does not interpolate)                  |
 | `NEXT_PUBLIC_API_URL`                            | `http://api:3001` (internal; the browser never calls it)                                                                     |
 | `NODE_ENV`                                       | `production`                                                                                                                 |
 | `SEED_API_BASE`                                  | `http://api:3001`                                                                                                            |
@@ -94,7 +94,8 @@ cd infra
 ```
 
 The `migrate` one-shot runs `prisma migrate deploy && db:grant` and exits 0 **before** the api starts.
-Caddy provisions a Let's Encrypt cert for `TILIK_DOMAIN` (or an internal-CA cert for `localhost`).
+Caddy provisions a Let's Encrypt cert for `TILIK_DOMAIN` (e.g. `tilik.techjuna.cloud`), or an internal-CA
+cert for `localhost`.
 
 ---
 
@@ -140,7 +141,7 @@ compile. It therefore requires the api image to exist first — step 4's `up -d 
    api connected as `tilik_app`).
 4. **web holds no secrets**:
    `C exec web printenv | grep -iE 'JWT_SECRET|ANTHROPIC|PATIENT_TOKEN|MINIO|SEED_|^DATABASE_URL='` → empty.
-5. In a **browser** at `https://<domain>`: the portal hydrates with no CSP error in the console (proves the
+5. In a **browser** at `https://tilik.techjuna.cloud`: the portal hydrates with no CSP error in the console (proves the
    env preload fired + the nonce CSP). A curl 200 does not prove this.
 6. After seeding:
    ```sql
