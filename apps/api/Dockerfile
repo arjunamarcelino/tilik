@@ -30,7 +30,9 @@ COPY packages/db/prisma/ packages/db/prisma/
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm fetch
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install -r --offline --frozen-lockfile
+# Install ONLY @tilik/api + its workspace deps (shared, db) — not apps/web's next/react/tailwind. All
+# manifests are copied above so --frozen-lockfile still resolves the full lockfile; --filter scopes linking.
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --filter "@tilik/api..." --offline --frozen-lockfile
 
 # ── build: compile shared → db (generate+tsc) → api (nest build) ─────────────────────────────────────
 FROM deps AS build

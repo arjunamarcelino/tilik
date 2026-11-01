@@ -20,7 +20,9 @@ COPY packages/db/prisma/ packages/db/prisma/
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm fetch
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install -r --offline --frozen-lockfile
+# Install ONLY @tilik/web + its workspace deps (shared) — not @tilik/db/api, so db's prepare (prisma
+# generate) never runs here. All manifests are copied above so --frozen-lockfile still resolves; --filter scopes linking.
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --filter "@tilik/web..." --offline --frozen-lockfile
 
 FROM deps AS build
 # NEXT_PUBLIC_API_URL is inlined into client bundles at build time. The browser never calls it (pure BFF);
