@@ -19,7 +19,7 @@ const stripInline = (s: string) =>
  * style; bullets become a real list. During streaming a half-arrived `**heading` is detected by its `**`
  * prefix so it never flickers as a paragraph first.
  */
-function SummaryBody({ text, streaming }: { text: string; streaming: boolean }) {
+function parseSummaryBlocks(text: string): ReactNode[] {
   const blocks: ReactNode[] = [];
   let bullets: string[] = [];
 
@@ -59,14 +59,20 @@ function SummaryBody({ text, streaming }: { text: string; streaming: boolean }) 
         );
       return;
     }
-    blocks.push(
-      <p key={i} style={{ overflowWrap: 'anywhere' }}>
-        {stripInline(line)}
-      </p>,
-    );
+    const body = stripInline(line);
+    if (body)
+      blocks.push(
+        <p key={i} style={{ overflowWrap: 'anywhere' }}>
+          {body}
+        </p>,
+      );
   });
   flushBullets('ul-end');
 
+  return blocks;
+}
+
+function SummaryBody({ blocks, streaming }: { blocks: ReactNode[]; streaming: boolean }) {
   return (
     <div
       role="log"
@@ -194,7 +200,10 @@ export function SummaryPanel({
   }
 
   const streaming = status === 'streaming';
-  const emptyResult = status === 'done' && text.trim().length === 0;
+  const blocks = parseSummaryBlocks(text);
+  // "Empty" = done but nothing renderable — covers whitespace-only output AND text that strips to zero
+  // blocks (e.g. a stray "**"), so the panel shows the fallback message instead of dead-ending on a blank.
+  const emptyResult = status === 'done' && blocks.length === 0;
 
   return (
     <section aria-labelledby="summary-heading" className={CARD}>
@@ -234,7 +243,7 @@ export function SummaryPanel({
           <p className="text-muted">Tidak dapat meringkas kasus ini dari bukti yang tersedia.</p>
         )}
 
-        {text.length > 0 && <SummaryBody text={text} streaming={streaming} />}
+        {(blocks.length > 0 || streaming) && <SummaryBody blocks={blocks} streaming={streaming} />}
 
         {/* Announce completion once — never per token. */}
         <p role="status" aria-live="polite" className="sr-only">
