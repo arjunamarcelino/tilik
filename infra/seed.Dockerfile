@@ -11,9 +11,13 @@
 # into the image, so re-running replays the same manifest hash via the importer's Idempotency-Key.
 
 ARG API_IMAGE=tilik-prod-api:latest
+# Byte-reproducibility of the bundle holds only for a PINNED toolchain. Override SEED_PYTHON_IMAGE with a
+# DIGEST (python:3.11-slim-bookworm@sha256:...) in prod — the floating tag can drift across rebuilds, which
+# changes the manifest hash → a fresh (non-replay) import against an already-seeded DB. See DEPLOY.md §5.
+ARG SEED_PYTHON_IMAGE=python:3.11-slim-bookworm
 
 # ── bundle: generate the frozen synthetic data (deterministic) ───────────────────────────────────────
-FROM python:3.11-slim-bookworm AS bundle
+FROM ${SEED_PYTHON_IMAGE} AS bundle
 ENV PYTHONHASHSEED=0 PYTHONDONTWRITEBYTECODE=1
 WORKDIR /gen
 COPY data/synthetic/ ./

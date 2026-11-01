@@ -104,8 +104,13 @@ The seed image **reuses the already-built api image** (`FROM tilik-prod-api:late
 synthetic bundle (generated at build with `--seed 42`, `PYTHONHASHSEED=0`), so it adds no second workspace
 compile. It therefore requires the api image to exist first — step 4's `up -d --build` (or
 `compose build api`) tags it; run the seed only after. It POSTs the bundle to the api; re-running **replays**
-(same manifest → same `Idempotency-Key`) — no duplicates. (Regenerating the bundle with different content
-would produce a new key and a fresh import; the bundle is frozen on purpose — see §8 note on rebuilds.)
+(same manifest → same `Idempotency-Key`) — no duplicates.
+
+> **Reproducibility across rebuilds:** the "frozen" guarantee holds for a _given built image_. Byte-equality
+> across rebuilds needs a pinned toolchain — the bundle stage's base floats (`python:3.11-slim-bookworm`).
+> For a reproducible bundle, build the seed image with a digest: `--build-arg SEED_PYTHON_IMAGE=python:3.11-slim-bookworm@sha256:<digest>`.
+> If a rebuilt bundle's bytes drift, its hash changes and re-seeding an **already-seeded** DB becomes a fresh
+> import (duplicate append-only rows). Re-seed only onto a fresh DB, or keep the same seed image.
 
 ---
 
