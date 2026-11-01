@@ -18,7 +18,7 @@ packages/shared               shared TS enums/types
 packages/db (@tilik/db)       Prisma schema, migrations, typed client
 services/detector             Python worker      (Prompt 07 — outbox poller + tokenizer; 08 — repeat-billing + cloning; 09 — contradiction detector + Finding→Case aggregation) — NOT a workspace package
 data/synthetic                data generator     (Prompt 04)    — NOT a workspace package
-infra                         Docker Compose + Caddy + env       — NOT a workspace package
+infra                         Docker Compose + Caddy + env       — NOT a workspace package (Prompt 14 — prod compose, Caddy, seed/migrate Dockerfiles)
 docs                          plans / reviews / solutions        — gitignored (local knowledge)
 ```
 
@@ -270,6 +270,27 @@ ESCALATED`, `NOT_FRAUD→CLOSED`, `NEEDS_MORE_INFO→PENDING`) — `verdictToSta
   (`data/synthetic/out/`) is gitignored **and** in `.prettierignore` (prettier scans the working tree, not
   `.gitignore`). Details: `data/synthetic/README.md` +
   `docs/solutions/integration-issues/deterministic-nopii-synthetic-data-python.md`.
+- **Production deploy (`infra/docker-compose.prod.yml` + Dockerfiles, Prompt 14).** `docker compose -f
+infra/docker-compose.prod.yml up -d --build` runs the whole stack behind **Caddy** (TLS); `DEPLOY.md` +
+  `DEMO.md` (repo root, committed) are the runbooks. **3 Dockerfiles, 5 roles**: `apps/api/Dockerfile` has
+  an `api` runtime target (pruned via `pnpm --prod deploy`, non-root, `/health` probe) **and** a `migrate`
+  target (the unpruned build stage — keeps the Prisma CLI devDep + `grant-app.sql` at the monorepo-relative
+  path — one-shot `migrate deploy && db:grant`, the **only** owner-`DATABASE_URL` service, runs **every**
+  deploy); `apps/web/Dockerfile` ships Next **standalone**; `services/detector/Dockerfile` is a venv-copy
+  slim image; `infra/seed.Dockerfile` bakes the **frozen** synthetic bundle then runs the compiled
+  `import-seed` against `SEED_API_BASE` (`--profile seed`, idempotent). All glibc **bookworm-slim** (Prisma's
+  schema engine + `generate` dislike musl; the api runtime uses the pg driver adapter = pure JS, no engine).
+  **Next standalone broke the root-`.env` preload**: `load-env.mjs` now loads via Node's built-in
+  `process.loadEnvFile` (not `@next/env`'s memoising `loadEnvConfig`, whose cached file-list made `next build`
+  copy a phantom `apps/web/.env` → ENOENT) + `output:'standalone'` needs top-level `outputFileTracingRoot` at
+  the monorepo root. **Per-service env scoping** keeps secrets out of the internet-facing `web` container
+  (verify `docker inspect web`); only Caddy publishes 80/443 (Docker bypasses UFW — rely on _not_ publishing
+  pg/minio, not the firewall); `init:true` + non-root + `no-new-privileges`. Caddy owns **HSTS** at the edge
+  via the `?` set-if-absent prefix and **never sets CSP** (the app's nonce CSP wins). **Coolify** (the real
+  target): Mode A drops Caddy, two Traefik path-domains (`/v1→api`, `/→web`, "Keep paths as-is"), git-push
+  deploy replaces CI/CD; `exclude_from_hc` is omitted from the committed compose (non-standard → breaks
+  `docker compose config`). Scoped MinIO key + bucket WORM are documented operator steps in `DEPLOY.md` §8,
+  not auto-wired (untested against live MinIO). Details: `docs/plans/2026-11-01-feat-vps-deployment-prod-compose-caddy-plan.md`.
 - **`docs/` is gitignored.** Plans, reviews, and `docs/solutions/*` are local knowledge, not committed.
   Check `docs/solutions/` for prior fixes before researching a problem.
 
