@@ -18,6 +18,10 @@ const stripInline = (s: string) =>
  * (the inert-text guarantee from Prompt 13 holds). Section labels reuse the portal's uppercase-muted label
  * style; bullets become a real list. During streaming a half-arrived `**heading` is detected by its `**`
  * prefix so it never flickers as a paragraph first.
+ *
+ * The recognized line shapes (`**heading**`, `- bullet`) are a CONTRACT with the summary system prompt
+ * (apps/api/src/cases/summary.service.ts → systemPrompt), which instructs the model to emit exactly that.
+ * Unrecognized shapes degrade gracefully to plain paragraphs; keep the two in sync if either changes.
  */
 function parseSummaryBlocks(text: string): ReactNode[] {
   const blocks: ReactNode[] = [];
