@@ -17,7 +17,7 @@ FROM python:3.11-slim-bookworm AS bundle
 ENV PYTHONHASHSEED=0 PYTHONDONTWRITEBYTECODE=1
 WORKDIR /gen
 COPY data/synthetic/ ./
-RUN pip install --no-cache-dir . \
+RUN --mount=type=cache,target=/root/.cache/pip pip install . \
  && python generate.py --episodes 60 --seed-fraud --seed 42 --out /bundle
 
 # ── runtime: the api image + the baked bundle, running the compiled importer ─────────────────────────

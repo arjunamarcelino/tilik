@@ -14,7 +14,9 @@ WORKDIR /src
 # pyproject + the package source (hatchling builds the `detector` wheel from packages=["detector"]).
 COPY services/detector/pyproject.toml ./
 COPY services/detector/detector ./detector
-RUN pip install --no-cache-dir .
+# Cache mount (not --no-cache-dir): a code edit invalidates this layer, but pip reuses the cached
+# numpy/scipy/scikit-learn wheels from the mount instead of re-downloading ~150 MB each build.
+RUN --mount=type=cache,target=/root/.cache/pip pip install .
 
 FROM python:3.11-slim-bookworm AS runtime
 # TZ=UTC is load-bearing: the repeat-billing detector keys on "same UTC day"; a non-UTC container would
