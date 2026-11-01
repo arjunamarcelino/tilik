@@ -89,9 +89,12 @@ services:
         # Scoped policy: bucket-level ListBucket/GetBucketLocation (the api's bucketExists HEAD) + object
         # Get/Put. No DeleteObject, no bucket admin. makeBucket is never reached (the bucket pre-exists).
         printf '%s' '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:ListBucket","s3:GetBucketLocation"],"Resource":["arn:aws:s3:::'"$$MINIO_BUCKET"'"]},{"Effect":"Allow","Action":["s3:GetObject","s3:PutObject"],"Resource":["arn:aws:s3:::'"$$MINIO_BUCKET"'/*"]}]}' > /tmp/policy.json
-        mc admin policy create local tilik-evidence-rw /tmp/policy.json 2>/dev/null || true
+        # Idempotent + FAIL-LOUD: create the policy only if absent, add the user only if absent, attach
+        # only if not already attached. A genuine failure now aborts init (api gates on its completion)
+        # instead of hiding behind `|| true` and resurfacing as a confusing AccessDenied boot-loop.
+        mc admin policy info local tilik-evidence-rw >/dev/null 2>&1 || mc admin policy create local tilik-evidence-rw /tmp/policy.json
         mc admin user info local "$$MINIO_ACCESS_KEY" >/dev/null 2>&1 || mc admin user add local "$$MINIO_ACCESS_KEY" "$$MINIO_SECRET_KEY"
-        mc admin policy attach local tilik-evidence-rw --user "$$MINIO_ACCESS_KEY" 2>/dev/null || true
+        mc admin user info local "$$MINIO_ACCESS_KEY" | grep -q tilik-evidence-rw || mc admin policy attach local tilik-evidence-rw --user "$$MINIO_ACCESS_KEY"
         echo "minio ready: bucket $$MINIO_BUCKET (object-lock) + scoped user $$MINIO_ACCESS_KEY"
     restart: on-failure
 
