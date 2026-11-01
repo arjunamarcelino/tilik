@@ -6,7 +6,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Pager } from '@/components/ui/pager';
 import { getCases, requireRole, type CaseListFilters } from '@/lib/dal';
 
-export const metadata: Metadata = { title: 'Cases — Tilik' };
+export const metadata: Metadata = { title: 'Cases | Tilik' };
 
 type SearchParams = Record<string, string | string[] | undefined>;
 

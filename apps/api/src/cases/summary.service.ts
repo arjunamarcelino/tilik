@@ -291,6 +291,11 @@ function systemPrompt(): string {
     '',
     'Tulis ringkasan ringkas dalam Bahasa Indonesia dengan struktur: Ringkasan, Kontradiksi/Temuan, Bukti',
     'yang hilang. Jangan menambahkan pembuka atau penutup basa-basi.',
+    // FORMAT CONTRACT consumed by the web renderer (apps/web/src/components/cases/summary-panel.tsx →
+    // parseSummaryBlocks): "**Judul**" lines become section headings and "- " lines become bullets. Keep
+    // these two in sync — a prompt change here must match what the renderer recognizes.
+    'Format: tulis setiap judul bagian sebagai "**Judul**" di barisnya sendiri dan setiap poin sebagai',
+    '"- poin". Jangan gunakan sintaks markdown lain (tanpa tanda #, tanpa penomoran).',
   ].join('\n');
 }
 

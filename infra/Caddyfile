@@ -14,6 +14,15 @@
 }
 
 {$TILIK_DOMAIN:localhost} {
+	# Cap request bodies at the edge. Next's Server Action bodySizeLimit (6mb, GLOBAL — it has no per-action
+	# scope) buffers the full body BEFORE the action's auth gate, so this is the outer bound: a grossly
+	# oversized upload is rejected (413) at Caddy before it ever reaches web. 8MB leaves headroom over the app
+	# limit; the /import multipart upload is far smaller. Request bodies only — the summary RESPONSE stream is
+	# unaffected.
+	request_body {
+		max_size 8MB
+	}
+
 	# Edge security headers. CSP is intentionally NOT set here — the web app emits a PER-REQUEST NONCE CSP
 	# (proxy.ts); a static one would overwrite it and break hydration. `?` = set-only-if-absent, so the
 	# app's own headers (helmet on /v1, next.config on web) always win; Caddy only fills gaps (notably HSTS,

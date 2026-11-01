@@ -1,3 +1,4 @@
+import type { RecordType, Rejection } from '@tilik/shared/contracts';
 import type {
   ClaimVersionDto,
   EpisodeDto,
@@ -5,7 +6,10 @@ import type {
   EvidenceRecordDto,
 } from './dto/bundle-records.dto';
 
-export type RecordType = 'episode' | 'claim-version' | 'evidence-record' | 'evidence-link';
+// The import RESPONSE DTOs (RecordType / FieldError / Rejection / ImportResult) are the single source of
+// truth in @tilik/shared/contracts, pinned web-side with `satisfies z.ZodType<…>`. Re-exported here so
+// existing importers (imports.service.ts, imports.controller.ts) keep their `./types` import path.
+export type { FieldError, ImportResult, RecordType, Rejection } from '@tilik/shared/contracts';
 
 /** One incoming bundle record, tagged with its source file + a batch-global position, pre-redaction. */
 export interface RawRecord {
@@ -15,20 +19,6 @@ export interface RawRecord {
   raw: Record<string, unknown>;
 }
 
-/** A per-field validation/linkage failure. NEVER carries the offending value (no PII echo). */
-export interface FieldError {
-  field: string;
-  constraint: string;
-}
-
-/** A rejected record (DTO-invalid, duplicate, dangling ref, or missing upload). Single shared shape. */
-export interface Rejection {
-  position: number;
-  recordType: RecordType;
-  ref: string;
-  errors: FieldError[];
-}
-
 /** Per-record outcome. Discriminated by `kind` so the resolved DTO type is recovered without `any`. */
 export type RowResult =
   | { kind: 'episode'; position: number; ref: string; dto: EpisodeDto }
@@ -36,11 +26,3 @@ export type RowResult =
   | { kind: 'evidence-record'; position: number; ref: string; dto: EvidenceRecordDto }
   | { kind: 'evidence-link'; position: number; ref: string; dto: EvidenceLinkDto }
   | ({ kind: 'rejected' } & Rejection);
-
-/** HTTP response body for POST /v1/imports and GET /v1/imports/:id. */
-export interface ImportResult {
-  batchId: string;
-  status: 'PENDING' | 'PROCESSING' | 'DONE' | 'FAILED' | 'PARTIAL';
-  summary: { received: number; accepted: number; rejected: number };
-  rejected: Rejection[];
-}

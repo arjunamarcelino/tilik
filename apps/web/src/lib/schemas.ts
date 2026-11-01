@@ -24,7 +24,9 @@ import type {
   EvidenceRecordDTO,
   FindingDTO,
   FindingReasons,
+  ImportResult,
   Me,
+  Rejection,
 } from '@tilik/shared/contracts';
 
 /**
@@ -188,3 +190,21 @@ export const CaseDetailSchema = z.object({
   timeline: z.array(AuditEventSchema),
   decision: CaseDecisionSchema.nullable(),
 }) satisfies z.ZodType<CaseDetail>;
+
+// ── Import upload (Prompt 14 follow-up: portal upload form) ───────────────────────────────────────
+// Response for POST /v1/imports, pinned to the shared contract like every other response schema: a drift
+// from `ImportResult` fails `pnpm typecheck`, and `safeParse` turns runtime drift into a clean error.
+const ImportRejectionSchema = z.object({
+  position: z.number().int(),
+  recordType: z.enum(['episode', 'claim-version', 'evidence-record', 'evidence-link']),
+  ref: z.string(),
+  errors: z.array(z.object({ field: z.string(), constraint: z.string() })),
+}) satisfies z.ZodType<Rejection>;
+
+export const ImportResultSchema = z.object({
+  batchId: z.string().min(1),
+  status: z.enum(['PENDING', 'PROCESSING', 'DONE', 'FAILED', 'PARTIAL']),
+  summary: z.object({ received: count, accepted: count, rejected: count }),
+  rejected: z.array(ImportRejectionSchema),
+}) satisfies z.ZodType<ImportResult>;
+export type ImportResultDTO = ImportResult;

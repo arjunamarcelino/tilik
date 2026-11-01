@@ -5,7 +5,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { SeverityBar } from '@/components/ui/severity-bar';
 import { StatCard } from '@/components/ui/stat-card';
 
-export const metadata: Metadata = { title: 'Dashboard — Tilik' };
+export const metadata: Metadata = { title: 'Dashboard | Tilik' };
 
 const PIPELINE: { key: CaseStatus; label: string; accent: string }[] = [
   { key: CaseStatus.OPEN, label: 'Open', accent: 'border-t-brand-blue' },

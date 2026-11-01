@@ -20,7 +20,7 @@ export function ContradictionsPanel({ kase }: { kase: CaseDetail }) {
               <li key={l.id} className="overflow-hidden rounded-lg border border-sev-high/30">
                 <div className="flex items-center gap-2 bg-sev-high-bg px-3 py-2 text-sm font-semibold text-sev-high">
                   <span aria-hidden="true">⇄</span>
-                  Contradiction — claim conflicts with evidence
+                  Contradiction: claim conflicts with evidence
                 </div>
                 <div className="grid gap-px bg-border sm:grid-cols-2">
                   <section aria-label="Claim" className="bg-surface p-3">

@@ -16,6 +16,15 @@ const nextConfig: NextConfig = {
   // `experimental`). Without it, file tracing roots at apps/web and omits the transpiled @tilik/shared
   // workspace dep → "module not found" at runtime. __dirname = apps/web for the compiled config.
   outputFileTracingRoot: resolve(__dirname, '..', '..'),
+  experimental: {
+    // Raise the Server Action body cap (default 1 MB) so the /import multipart upload (manifest + evidence
+    // files) fits — the synthetic bundle is well under this. NOTE: this is a GLOBAL Next setting (there is
+    // no per-action limit), so it applies to EVERY Server Action (login, decide, logout…), and Next buffers
+    // the full body BEFORE the action runs its auth gate. Kept as small as the upload allows to bound that
+    // pre-auth buffering; request bodies are also capped at the edge (infra/Caddyfile `request_body`). The
+    // API enforces its own 5 MiB/part + 600-part limits downstream.
+    serverActions: { bodySizeLimit: '6mb' },
+  },
   async headers() {
     // Static security headers only. The Content-Security-Policy is NOT here — it needs a per-request
     // nonce (a static `script-src 'self'` blocks Next's inline scripts and breaks hydration), so it is

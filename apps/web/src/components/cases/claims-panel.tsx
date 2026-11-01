@@ -1,6 +1,19 @@
 import type { ClaimVersionDTO } from '@tilik/shared/contracts';
 import { Panel, PanelEmpty } from './panel';
 
+// Indonesian rupiah with grouped thousands (e.g. "Rp 5.762.000,00"). Amounts arrive as Decimal(2) strings;
+// group them WITHOUT a JS float (Number() silently loses precision above 2^53, a smell in an
+// evidence-integrity system). Split the fixed-scale string into integer/fraction halves, group the integer
+// part via BigInt (exact), and join with the Indonesian decimal comma. Non-decimal input shows as-is.
+const RUPIAH_INT = new Intl.NumberFormat('id-ID');
+function formatRupiah(amount: string): string {
+  const m = /^(-?)(\d+)(?:\.(\d+))?$/.exec(amount.trim());
+  if (!m) return `Rp ${amount}`;
+  const [, sign = '', intPart = '0', frac = ''] = m;
+  const cents = (frac + '00').slice(0, 2); // pad/truncate to the 2dp scale
+  return `Rp ${sign}${RUPIAH_INT.format(BigInt(intPart))},${cents}`;
+}
+
 /** Involved claim versions and their lines (diagnoses / procedures). */
 export function ClaimsPanel({ claimVersions }: { claimVersions: ClaimVersionDTO[] }) {
   return (
@@ -18,7 +31,7 @@ export function ClaimsPanel({ claimVersions }: { claimVersions: ClaimVersionDTO[
                   {cv.isCurrent ? ' · current' : ''}
                 </span>
                 <span className="text-muted">INA-CBG {cv.inacbgCode}</span>
-                <span className="ml-auto font-mono text-brand-ink">Rp {cv.amount}</span>
+                <span className="ml-auto font-mono text-brand-ink">{formatRupiah(cv.amount)}</span>
               </div>
               {cv.lines.length > 0 && (
                 <ul className="mt-2 divide-y divide-border text-xs">
@@ -27,7 +40,9 @@ export function ClaimsPanel({ claimVersions }: { claimVersions: ClaimVersionDTO[
                       <span className="w-24 shrink-0 text-muted">{l.type}</span>
                       <span className="font-mono">{l.code}</span>
                       <span className="flex-1 truncate text-muted">{l.description ?? ''}</span>
-                      {l.amount && <span className="font-mono text-brand-ink">Rp {l.amount}</span>}
+                      {l.amount && (
+                        <span className="font-mono text-brand-ink">{formatRupiah(l.amount)}</span>
+                      )}
                     </li>
                   ))}
                 </ul>

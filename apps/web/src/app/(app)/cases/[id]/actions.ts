@@ -62,19 +62,19 @@ export async function decide(
     revalidatePath(`/cases/${caseId}`);
     return {
       kind: 'reconciled',
-      message: 'This case was already decided — showing the recorded decision below.',
+      message: 'This case was already decided. Showing the recorded decision below.',
     };
   }
   if (res.status === 403) {
     return { kind: 'error', message: 'You do not have permission to decide this case.' };
   }
   if (res.status === 429) {
-    return { kind: 'error', message: 'Too many attempts — try again in a minute.' };
+    return { kind: 'error', message: 'Too many attempts. Try again in a minute.' };
   }
   if (res.status === 400) {
     return {
       kind: 'error',
-      message: 'The decision was rejected as invalid — check the rationale.',
+      message: 'The decision was rejected as invalid. Check the rationale.',
     };
   }
   if (!res.ok) {

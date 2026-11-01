@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { Wordmark } from '@/components/wordmark';
 import { LoginForm } from './login-form';
 
-export const metadata: Metadata = { title: 'Sign in — Tilik' };
+export const metadata: Metadata = { title: 'Sign in | Tilik' };
 
 // Off-center split: a navy mission panel beside the form (single column below 900px).
 export default function LoginPage() {
