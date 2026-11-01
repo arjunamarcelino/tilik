@@ -18,7 +18,7 @@ packages/shared               shared TS enums/types
 packages/db (@tilik/db)       Prisma schema, migrations, typed client
 services/detector             Python worker      (Prompt 07 — outbox poller + tokenizer; 08 — repeat-billing + cloning; 09 — contradiction detector + Finding→Case aggregation) — NOT a workspace package
 data/synthetic                data generator     (Prompt 04)    — NOT a workspace package
-infra                         Docker Compose + Caddy + env       — NOT a workspace package
+infra                         Docker Compose + Caddy + env       — NOT a workspace package (Prompt 14 — prod compose, Caddy, seed/migrate Dockerfiles)
 docs                          plans / reviews / solutions        — gitignored (local knowledge)
 ```
 
@@ -270,6 +270,35 @@ ESCALATED`, `NOT_FRAUD→CLOSED`, `NEEDS_MORE_INFO→PENDING`) — `verdictToSta
   (`data/synthetic/out/`) is gitignored **and** in `.prettierignore` (prettier scans the working tree, not
   `.gitignore`). Details: `data/synthetic/README.md` +
   `docs/solutions/integration-issues/deterministic-nopii-synthetic-data-python.md`.
+- **Production deploy (`infra/docker-compose.prod.yml` + Dockerfiles, Prompt 14).** `docker compose -f
+infra/docker-compose.prod.yml up -d --build` runs the whole stack behind **Caddy** (TLS); `DEPLOY.md` +
+  `DEMO.md` (repo root, committed) are the runbooks. **3 Dockerfiles, 5 roles**: `apps/api/Dockerfile` has
+  an `api` runtime target (pruned via `pnpm --prod deploy`, non-root, `/health` probe) **and** a `migrate`
+  target (the unpruned build stage — keeps the Prisma CLI devDep + `grant-app.sql` at the monorepo-relative
+  path — one-shot `migrate deploy && db:grant`, the **only** owner-`DATABASE_URL` service, runs **every**
+  deploy); `apps/web/Dockerfile` ships Next **standalone**; `services/detector/Dockerfile` is a venv-copy
+  slim image; `infra/seed.Dockerfile` **reuses the api image** (`FROM tilik-prod-api:latest`, tagged on the
+  `api` service) + a **frozen** baked bundle and runs the compiled `import-seed` against `SEED_API_BASE`
+  (`--profile seed`, idempotent; build api first). All glibc **bookworm-slim** (Prisma's
+  schema engine + `generate` dislike musl; the api runtime uses the pg driver adapter = pure JS, no engine).
+  **Next standalone broke the root-`.env` preload**: `load-env.mjs` now loads via Node's built-in
+  `process.loadEnvFile` (not `@next/env`'s memoising `loadEnvConfig`, whose cached file-list made `next build`
+  copy a phantom `apps/web/.env` → ENOENT) + `output:'standalone'` needs top-level `outputFileTracingRoot` at
+  the monorepo root. **Per-service env scoping** keeps secrets out of the internet-facing `web` container
+  (verify `docker inspect web`); only Caddy publishes 80/443 (Docker bypasses UFW — rely on _not_ publishing
+  pg/minio, not the firewall); `init:true` + non-root + `no-new-privileges`. Caddy owns **HSTS** at the edge
+  via the `?` set-if-absent prefix and **never sets CSP** (the app's nonce CSP wins). **Coolify** (the real
+  target): Mode A drops Caddy, two Traefik path-domains (`/v1→api`, `/→web`, "Keep paths as-is"), git-push
+  deploy replaces CI/CD; `exclude_from_hc` is omitted from the committed compose (non-standard → breaks
+  `docker compose config`). **MinIO hardening is wired into prod `minio-init`**: the bucket is created
+  `--with-lock` (object-lock capability + versioning — not hard WORM without a retention; the append-only
+  DB `contentHash` stays the authoritative tamper guard) and a **least-privilege IAM user** is
+  provisioned from `MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY` (Get/Put + bucket-level ListBucket/GetBucketLocation
+  for the api's `bucketExists`; no Delete, never root — so set them **distinct from `MINIO_ROOT_USER`**, which
+  minio-init **fails closed** on if equal, since an equal key silently collapses the scoping to admin-root). No
+  hard default-retention (would block re-import). Gotchas + the review-fix pass:
+  `docs/solutions/integration-issues/vps-deploy-prod-compose-caddy-prompt14.md`; plan:
+  `docs/plans/2026-11-01-feat-vps-deployment-prod-compose-caddy-plan.md`.
 - **`docs/` is gitignored.** Plans, reviews, and `docs/solutions/*` are local knowledge, not committed.
   Check `docs/solutions/` for prior fixes before researching a problem.
 

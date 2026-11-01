@@ -17,7 +17,9 @@ const repoRoot = resolve(__dirname, '..', '..', '..', '..');
 loadDotenv({ path: resolve(repoRoot, '.env') });
 
 const bundleDir = process.env.BUNDLE_DIR ?? resolve(repoRoot, 'data', 'synthetic', 'out');
-const apiBase = `http://localhost:${process.env.API_PORT ?? '3001'}`;
+// SEED_API_BASE lets the containerised seed one-shot (Prompt 14) target the api over the Compose network
+// (http://api:3001); unset in local dev it falls back to localhost:API_PORT (the single-host default).
+const apiBase = process.env.SEED_API_BASE ?? `http://localhost:${process.env.API_PORT ?? '3001'}`;
 const email = process.env.SEED_ADMIN_EMAIL;
 const password = process.env.SEED_ADMIN_PASSWORD;
 

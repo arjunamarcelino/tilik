@@ -1,0 +1,28 @@
+# Build context hygiene for the production images (Prompt 14). The api/web/seed images build from the
+# REPO ROOT as context (monorepo: they need the pnpm workspace manifests + packages/*). Keep the context
+# small, and NEVER let a secret or a stale build artifact leak into an image layer.
+
+# Dependencies + build artifacts (all regenerated inside the image build)
+**/node_modules
+**/dist
+**/.next
+packages/db/src/generated
+
+# Python local envs / caches (the detector + synthetic generator)
+**/.venv
+**/__pycache__
+**/*.pyc
+
+# Generated synthetic bundle — the seed image regenerates it deterministically in-build
+data/synthetic/out
+
+# Secrets + local knowledge — must never be baked into a layer
+.env
+.env.*
+!.env.example
+docs
+
+# VCS + OS noise
+.git
+.gitignore
+**/.DS_Store
