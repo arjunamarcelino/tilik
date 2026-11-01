@@ -66,6 +66,7 @@ services:
         condition: service_started
     environment:
       MINIO_BUCKET: ${MINIO_BUCKET:-tilik-evidence}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env}
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?set a SCOPED MINIO_ACCESS_KEY (distinct from MINIO_ROOT_USER) in .env}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?set MINIO_SECRET_KEY (>=8 chars) in .env}
       MC_CONFIG_DIR: /tmp/.mc
@@ -75,6 +76,13 @@ services:
       - -c
       - |
         set -e
+        # Fail CLOSED if the api's key equals the root user: otherwise `user info` below finds the root
+        # account, skips `user add`, and `policy attach` is a no-op (root ignores IAM) → the api would run
+        # with FULL ADMIN, silently defeating the scoping. (A non-empty required-var check can't catch this.)
+        if [ "$$MINIO_ACCESS_KEY" = "$$MINIO_ROOT_USER" ]; then
+          echo "FATAL: MINIO_ACCESS_KEY must differ from MINIO_ROOT_USER (the api's scoped user cannot be root)" >&2
+          exit 1
+        fi
         mc ready local
         # Bucket with object-lock (also enables versioning): evidence bytes become tamper-evident at rest.
         mc mb --ignore-existing --with-lock local/"$$MINIO_BUCKET"
