@@ -13,6 +13,8 @@ RUN npm i -g pnpm@10.29.2
 WORKDIR /app
 
 FROM base AS deps
+# Every workspace manifest is copied so --frozen-lockfile resolves (even deps not installed here).
+# (Keep this set in sync with apps/api/Dockerfile's deps stage.)
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/db/package.json packages/db/prisma.config.ts packages/db/

@@ -2,7 +2,8 @@
 // Next process — the CLI, the config, and the render workers alike (NODE_OPTIONS propagates to the worker
 // subprocesses, so each re-runs this). next.config-time loading alone does not reach the workers that run
 // Server Components, so a server-side read of NEXT_PUBLIC_API_URL there would be undefined. Runs before any
-// application module. Mirrors the API's load-env.ts.
+// application module. (Same INTENT as the API's load-env.ts, but a different loader: the API uses dotenv's
+// config(); this uses Node's process.loadEnvFile + a WEB_ALLOW prune — see the WHY below.)
 //
 // NOTE (review P3-5): this is wired into the pnpm dev/build/start scripts, NOT into `next` itself. An
 // out-of-band `next` invocation runs without it → apiBase() throws a clear "NEXT_PUBLIC_API_URL not set"
@@ -29,7 +30,10 @@ const ambient = new Set(Object.keys(process.env));
 const envPath = resolve(dir, '..', '..', '.env');
 if (existsSync(envPath)) process.loadEnvFile(envPath);
 
-// Least-privilege (review P2-1): the web tier needs ONLY NEXT_PUBLIC_API_URL (+ WEB_PORT). The root .env
+// Least-privilege (review P2-1): the web tier needs ONLY NEXT_PUBLIC_API_URL (+ WEB_PORT). NOTE: this prune
+// is a DEV-path guard — it only removes keys THIS load introduced from a root .env. In the prod container
+// there is no .env (vars are injected directly), so nothing is pruned; there, the real guard is the
+// per-service `environment:` scoping in docker-compose.prod.yml (the web service gets no secret). The root .env
 // also carries JWT_SECRET, the owner DATABASE_URL, MinIO + HMAC keys, and SEED_* passwords — none of which
 // the portal uses. Drop every key this load introduced that isn't web-scoped, so those secrets never sit
 // in the (internet-facing) Next process's environment. NEXT_PUBLIC_* stays (NEXT_PUBLIC_API_URL).

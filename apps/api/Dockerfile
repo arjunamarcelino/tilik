@@ -23,6 +23,8 @@ WORKDIR /app
 FROM base AS deps
 # Manifests + lockfile FIRST so this layer survives source edits. Copy every workspace package.json so the
 # frozen lockfile resolves; packages/db/prisma is needed by @tilik/db's `prepare` (prisma generate).
+# (Keep this manifest set in sync with apps/web/Dockerfile's deps stage — a new workspace package must be
+# added to both or the --frozen-lockfile install fails.)
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/db/package.json packages/db/prisma.config.ts packages/db/

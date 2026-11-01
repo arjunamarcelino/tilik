@@ -52,8 +52,8 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
     volumes:
       - tilik-minio-data:/data
-    # No published ports — S3 API + console stay on the internal network. (See DEPLOY.md to harden with a
-    # scoped service-account key + bucket object-lock/versioning instead of the root creds the api uses.)
+    # No published ports — S3 API + console stay on the internal network. (minio-init provisions the api's
+    # scoped IAM user + the object-lock bucket; the root creds stay here, never on the api.)
     cpus: 1.0
 
   # Creates the evidence bucket WITH object-lock (object-lock CAPABILITY + versioning), then provisions a
