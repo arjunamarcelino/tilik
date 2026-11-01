@@ -34,8 +34,9 @@ export class ImportsController {
   constructor(private readonly imports: ImportsService) {}
 
   @Post()
-  // ADMIN ⊇ REVIEWER in RolesGuard, so REVIEWER tags the lowest sufficient role (ADMIN passes too).
-  @Roles(Role.REVIEWER)
+  // Import is an ADMIN-only operation. The API is the authoritative gate: the portal (import/page.tsx +
+  // runImport) also restricts to ADMIN, but a REVIEWER session must not be able to drive this route directly.
+  @Roles(Role.ADMIN)
   // AnyFilesInterceptor relies on Nest's DEFAULT in-memory multer storage so part.buffer is populated
   // (ImportsService reads buffers). Do NOT register MulterModule with disk storage or buffer goes undefined.
   @UseInterceptors(AnyFilesInterceptor({ limits: { fileSize: MAX_PART_BYTES, files: MAX_PARTS } }))
