@@ -63,7 +63,7 @@ Fill in every value (generate secrets with `openssl rand -base64 32`). Required 
 | `DATABASE_URL`                                   | **owner** URL → `…@postgres:5432/tilik?schema=public` (migrate only)                                                         |
 | `APP_DATABASE_URL`                               | **non-owner** URL → `…@postgres:5432/tilik?schema=public` (api + detector)                                                   |
 | `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD`        | MinIO admin                                                                                                                  |
-| `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY`          | the api's object-store creds (see §8 to scope them)                                                                          |
+| `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY`          | the api's object-store creds — **distinct from the root user** (minio-init provisions a scoped user; see §8)                 |
 | `PATIENT_TOKEN_HMAC_KEY`                         | ≥44 random bytes. **Rotate-never** — it keys tokenization + content hashes; changing it after any import de-syncs the corpus |
 | `JWT_SECRET`                                     | ≥44 chars                                                                                                                    |
 | `ANTHROPIC_API_KEY`                              | server-side only; never logged                                                                                               |
@@ -155,25 +155,29 @@ key and a fresh import; the bundle is frozen on purpose.)
 
 ---
 
-## 8. Hardening (recommended, operator steps)
+## 8. Storage hardening (built in)
 
-These extend the evidence-integrity guarantee to storage. They are **not** auto-wired into `minio-init`
-(kept identical to the tested dev path to avoid risking the demo), so apply them deliberately:
+The prod `minio-init` extends the evidence-integrity guarantee to storage automatically — no manual steps:
 
-- **Scoped MinIO key**: instead of the api using root creds, mint a service account limited to the bucket
-  and point `MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY` at it:
+- **Scoped MinIO user (built in)**: `minio-init` provisions a least-privilege IAM user from
+  `MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY` with a policy allowing only `s3:GetObject`/`s3:PutObject` on the
+  bucket (+ bucket-level `ListBucket`/`GetBucketLocation` for the api's `bucketExists` probe) — **no**
+  `DeleteObject`, no bucket admin, never the root creds. So in `.env` these two vars **must be distinct from
+  `MINIO_ROOT_USER`** (secret ≥8 chars). A compromised api therefore can't wipe or rewrite every object.
+  **Verify** after deploy (from a transient mc container on the stack network):
   ```bash
-  # from a transient mc container on the stack network (the Chainguard minio image is distroless)
-  docker run --rm --network tilik-prod_default --entrypoint sh minio/mc -c '
-    mc alias set m http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" &&
-    mc admin user svcacct add --access-key "$MINIO_ACCESS_KEY" --secret-key "$MINIO_SECRET_KEY" m "$MINIO_ROOT_USER"'
-  # then attach a policy allowing only s3:GetObject/s3:PutObject on arn:aws:s3:::tilik-evidence/*
+  docker run --rm --network tilik-prod_default --entrypoint sh minio/mc -c \
+    'mc alias set m http://minio:9000 "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY" && mc rm m/tilik-evidence/anything 2>&1 | grep -qi "access denied" && echo "DELETE denied — scoped OK"'
   ```
-- **Bucket WORM**: enable versioning + object-lock on `tilik-evidence` so evidence bytes can't be silently
-  overwritten/deleted (`mc version enable` / object-lock at bucket creation).
-- **Secrets at rest**: for the owner `DATABASE_URL`, `ANTHROPIC_API_KEY`, `PATIENT_TOKEN_HMAC_KEY`, consider
-  Compose `secrets:` (file-mounted) so they don't appear in `docker inspect`. Never mount the Docker socket
-  into an app container (socket access == full secret disclosure).
+- **Bucket WORM (built in)**: the bucket is created `--with-lock`, which enables object-lock capability +
+  versioning, so overwrites/deletes leave prior versions behind (tamper-evident). A hard **default
+  retention** (`mc retention set --default GOVERNANCE <dur>`) is intentionally **not** applied — it could
+  block a legitimate re-import — enable it once you've confirmed your write pattern needs hard immutability.
+- **If the api fails to boot** with a MinIO `AccessDenied`, the scoped policy is too tight for how the client
+  probes the bucket — check `MINIO_ACCESS_KEY` is distinct from root and that `minio-init` exited 0.
+- **Secrets at rest (optional)**: for the owner `DATABASE_URL`, `ANTHROPIC_API_KEY`, `PATIENT_TOKEN_HMAC_KEY`,
+  consider Compose `secrets:` (file-mounted) so they don't appear in `docker inspect`. Never mount the Docker
+  socket into an app container (socket access == full secret disclosure).
 
 ---
 

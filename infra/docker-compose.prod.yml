@@ -55,6 +55,10 @@ services:
     # scoped service-account key + bucket object-lock/versioning instead of the root creds the api uses.)
     mem_limit: 512m
 
+  # Creates the evidence bucket WITH object-lock (WORM capability + versioning → tamper-evident storage),
+  # then provisions a LEAST-PRIVILEGE IAM user for the api (Get/Put on the bucket only, never the root creds)
+  # — so a compromised api can't wipe or rewrite every object. Idempotent + reset-safe (restart: on-failure).
+  # Requires scoped MINIO_ACCESS_KEY/SECRET_KEY distinct from the root user (see .env.example).
   minio-init:
     image: *minio-image
     depends_on:
@@ -62,15 +66,25 @@ services:
         condition: service_started
     environment:
       MINIO_BUCKET: ${MINIO_BUCKET:-tilik-evidence}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?set a SCOPED MINIO_ACCESS_KEY (distinct from MINIO_ROOT_USER) in .env}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?set MINIO_SECRET_KEY (>=8 chars) in .env}
       MC_CONFIG_DIR: /tmp/.mc
       MC_HOST_local: http://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@minio:9000
     entrypoint:
       - sh
       - -c
-      - >
-        mc ready local &&
-        mc mb --ignore-existing local/"$${MINIO_BUCKET}" &&
-        echo "bucket ready: $${MINIO_BUCKET}"
+      - |
+        set -e
+        mc ready local
+        # Bucket with object-lock (also enables versioning): evidence bytes become tamper-evident at rest.
+        mc mb --ignore-existing --with-lock local/"$$MINIO_BUCKET"
+        # Scoped policy: bucket-level ListBucket/GetBucketLocation (the api's bucketExists HEAD) + object
+        # Get/Put. No DeleteObject, no bucket admin. makeBucket is never reached (the bucket pre-exists).
+        printf '%s' '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:ListBucket","s3:GetBucketLocation"],"Resource":["arn:aws:s3:::'"$$MINIO_BUCKET"'"]},{"Effect":"Allow","Action":["s3:GetObject","s3:PutObject"],"Resource":["arn:aws:s3:::'"$$MINIO_BUCKET"'/*"]}]}' > /tmp/policy.json
+        mc admin policy create local tilik-evidence-rw /tmp/policy.json 2>/dev/null || true
+        mc admin user info local "$$MINIO_ACCESS_KEY" >/dev/null 2>&1 || mc admin user add local "$$MINIO_ACCESS_KEY" "$$MINIO_SECRET_KEY"
+        mc admin policy attach local tilik-evidence-rw --user "$$MINIO_ACCESS_KEY" 2>/dev/null || true
+        echo "minio ready: bucket $$MINIO_BUCKET (object-lock) + scoped user $$MINIO_ACCESS_KEY"
     restart: on-failure
 
   # ── Migrations (one-shot, OWNER) ────────────────────────────────────────────────────────────────────

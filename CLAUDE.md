@@ -289,8 +289,11 @@ infra/docker-compose.prod.yml up -d --build` runs the whole stack behind **Caddy
   via the `?` set-if-absent prefix and **never sets CSP** (the app's nonce CSP wins). **Coolify** (the real
   target): Mode A drops Caddy, two Traefik path-domains (`/v1→api`, `/→web`, "Keep paths as-is"), git-push
   deploy replaces CI/CD; `exclude_from_hc` is omitted from the committed compose (non-standard → breaks
-  `docker compose config`). Scoped MinIO key + bucket WORM are documented operator steps in `DEPLOY.md` §8,
-  not auto-wired (untested against live MinIO). Details: `docs/plans/2026-11-01-feat-vps-deployment-prod-compose-caddy-plan.md`.
+  `docker compose config`). **MinIO hardening is wired into prod `minio-init`**: the bucket is created
+  `--with-lock` (object-lock + versioning = tamper-evident storage) and a **least-privilege IAM user** is
+  provisioned from `MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY` (Get/Put + bucket-level ListBucket/GetBucketLocation
+  for the api's `bucketExists`; no Delete, never root — so set them **distinct from `MINIO_ROOT_USER`**). No
+  hard default-retention (would block re-import). Details: `docs/plans/2026-11-01-feat-vps-deployment-prod-compose-caddy-plan.md`.
 - **`docs/` is gitignored.** Plans, reviews, and `docs/solutions/*` are local knowledge, not committed.
   Check `docs/solutions/` for prior fixes before researching a problem.
 
