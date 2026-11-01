@@ -1,15 +1,17 @@
 import type { ClaimVersionDTO } from '@tilik/shared/contracts';
 import { Panel, PanelEmpty } from './panel';
 
-// Indonesian rupiah with grouped thousands (e.g. "Rp 5.762.000,00"). Amounts arrive as Decimal(2) strings
-// from the API; parse to a number for grouping, fall back to the raw string if it is somehow non-numeric.
-const RUPIAH = new Intl.NumberFormat('id-ID', {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
+// Indonesian rupiah with grouped thousands (e.g. "Rp 5.762.000,00"). Amounts arrive as Decimal(2) strings;
+// group them WITHOUT a JS float (Number() silently loses precision above 2^53, a smell in an
+// evidence-integrity system). Split the fixed-scale string into integer/fraction halves, group the integer
+// part via BigInt (exact), and join with the Indonesian decimal comma. Non-decimal input shows as-is.
+const RUPIAH_INT = new Intl.NumberFormat('id-ID');
 function formatRupiah(amount: string): string {
-  const n = Number(amount);
-  return Number.isFinite(n) ? `Rp ${RUPIAH.format(n)}` : `Rp ${amount}`;
+  const m = /^(-?)(\d+)(?:\.(\d+))?$/.exec(amount.trim());
+  if (!m) return `Rp ${amount}`;
+  const [, sign = '', intPart = '0', frac = ''] = m;
+  const cents = (frac + '00').slice(0, 2); // pad/truncate to the 2dp scale
+  return `Rp ${sign}${RUPIAH_INT.format(BigInt(intPart))},${cents}`;
 }
 
 /** Involved claim versions and their lines (diagnoses / procedures). */
