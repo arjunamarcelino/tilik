@@ -16,6 +16,12 @@ const nextConfig: NextConfig = {
   // `experimental`). Without it, file tracing roots at apps/web and omits the transpiled @tilik/shared
   // workspace dep → "module not found" at runtime. __dirname = apps/web for the compiled config.
   outputFileTracingRoot: resolve(__dirname, '..', '..'),
+  experimental: {
+    // The /import Server Action receives the manifest + evidence files as multipart FormData. The default
+    // Server Action body cap is 1 MB; raise it so a full synthetic bundle (manifest + up to ~600 tiny
+    // evidence parts) fits. The API still enforces its own 5 MiB/part + 600-part limits downstream.
+    serverActions: { bodySizeLimit: '15mb' },
+  },
   async headers() {
     // Static security headers only. The Content-Security-Policy is NOT here — it needs a per-request
     // nonce (a static `script-src 'self'` blocks Next's inline scripts and breaks hydration), so it is
