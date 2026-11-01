@@ -238,6 +238,15 @@ needed**.
   streams unbuffered by default (the summary works with no `flush_interval`). **Do not** enable Coolify's
   per-domain security-headers middleware on the web domain — a static CSP there would break the app's nonce
   CSP.
+- **Dropping Caddy drops its edge duties — re-create them on Traefik.** Caddy is the sole owner of three
+  behaviors that have no fallback elsewhere; when you remove it on Coolify, replace each:
+  1. **HSTS** — Caddy adds `Strict-Transport-Security` for real domains (the app/helmet does not reliably).
+     Add it via a Traefik `headers` middleware (real domain only), NOT a static CSP.
+  2. **`/healthz`** — the Compose healthcheck probes Caddy's `/healthz`; with Caddy gone, rely on the api's
+     own `/health` + web readiness instead (nothing else serves `/healthz`).
+  3. **Stream flush** — Caddy's `flush_interval -1` on the summary route is what makes the `text/plain`
+     stream flow; Traefik streams unbuffered by default, so verify the summary still streams token-by-token
+     in a browser (no buffering middleware on that route).
 - **Secrets**: enter them in Coolify's UI (not committed); `${VAR:?}` blocks a deploy when one is empty. A
   Coolify host compromise exposes all secrets, so harden the dashboard (TLS + auth + 2FA), pin auto-deploy to
   a protected branch, and confirm the GitHub webhook signature is enforced.
