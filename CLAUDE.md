@@ -13,7 +13,7 @@ on Docker Compose. Monorepo via **pnpm workspaces**.
 
 ```
 apps/api                      NestJS API (TS)    (Prompt 05 — auth/RBAC/audit shell; 06 — import pipeline; 11 — cases read API + evidence download; 12 — reviewer decision write; 13 — grounded streaming Claude summary endpoint)
-apps/web                      Next.js web (TS)   (Prompt 10 — BFF portal: auth/cookie/DAL, role-aware shell, dashboard; 11 — case list/detail review screens; 12 — decision panel; 13 — streaming summary panel)
+apps/web                      Next.js web (TS)   (Prompt 10 — BFF portal: auth/cookie/DAL, role-aware shell, dashboard; 11 — case list/detail review screens; 12 — decision panel; 13 — streaming summary panel; 14-followup — admin claim-import upload form)
 packages/shared               shared TS enums/types
 packages/db (@tilik/db)       Prisma schema, migrations, typed client
 services/detector             Python worker      (Prompt 07 — outbox poller + tokenizer; 08 — repeat-billing + cloning; 09 — contradiction detector + Finding→Case aggregation) — NOT a workspace package
@@ -75,7 +75,8 @@ PUBLIC` is a no-op). Keep that REVOKE list in sync with new append-only tables. 
   it: `pnpm --filter @tilik/api start:dev`. Details:
   `docs/solutions/integration-issues/nestjs-11-cjs-api-skeleton-nonowner-rbac-audit.md`.
 - **Import pipeline (`apps/api/src/imports`, Prompt 06) — the trust boundary.** `POST /v1/imports` (multipart;
-  `@Roles(REVIEWER)`) runs parse→**validate→resolve→stage→write**. **Never store a raw patient id:** validation runs
+  `@Roles(ADMIN)` — import is **admin-only**, enforced here at the authoritative API; the portal upload form
+  (Prompt 14 follow-up) drives it) runs parse→**validate→resolve→stage→write**. **Never store a raw patient id:** validation runs
   **before** staging, so `StagingRecord.raw` holds the redacted/validated shape (accepted episodes keep `patientRef`→
   token; rejected records store `{}`), with `rawHash` = sha256 of the record's RFC-8785 canonical JSON as tamper-evidence.
   `patientToken` + `contentHash` are computed **import-side** (specs in `@tilik/shared/tokenization` + `imports/canonical.ts`,
@@ -250,12 +251,30 @@ ESCALATED`, `NOT_FRAUD→CLOSED`, `NEEDS_MORE_INFO→PENDING`) — `verdictToSta
   Handler** relay (not a Server Action — only a `Response` streams) forwards the cookie→Bearer, adds a
   same-origin `Sec-Fetch-Site` CSRF check, returns **401 (not `redirect()`)** on a fetch POST (the client maps it
   to a `/logout` navigation), and is **excluded from `proxy.ts`'s matcher**. The panel is **keyed on `caseId`**
-  (the App Router reuses the client instance across `/cases/[id]`), rAF-batches tokens, renders inert `pre-wrap`
-  JSX (never a markdown/HTML renderer), with a11y `role=log`/`aria-live=off` and a once-only `role=status`.
+  (the App Router reuses the client instance across `/cases/[id]`), rAF-batches tokens, and renders inert,
+  **React-escaped JSX blocks** via `parseSummaryBlocks` (Prompt 14 follow-up — maps `**heading**`/`- bullet`
+  line shapes to section labels + lists; a format **contract** with the summary system prompt; still **never**
+  a markdown/HTML renderer, so the inert-text guarantee holds), with a11y `role=log`/`aria-live=off` and a
+  once-only `role=status`.
   **Caddy** does not auto-flush `text/plain` (only `text/event-stream`) → `flush_interval -1` scoped to the
   summary route (it ignores `X-Accel-Buffering`); verify streaming in a **browser through Caddy**, not curl. **No
   migration** (`Case.summary` exists). Details:
   `docs/solutions/integration-issues/case-evidence-summary-claude-streaming-prompt13.md`.
+- **Portal import upload (`apps/web/.../import`, Prompt 14 follow-up).** The `/import` page is a working
+  uploader, not a stub. A **Server Action** (`import/actions.ts`, **ADMIN**-gated both sides — the API is
+  authoritative, see Prompt 06) forwards the cookie→Bearer and reassembles multipart exactly as the seed does:
+  one `manifest` part + one file part **keyed by each record's `ref`** (not the filename). The **Idempotency-Key**
+  is `portal:sha256(manifestBytes + sorted (name,size) of the attached files)` — a byte-identical re-upload
+  **replays**, but a *corrected* upload (same manifest, now-complete files) is a **new** request (so NEVER hash
+  the manifest alone). A **manifest-only** upload is valid (payload-backed episodes import; file-backed records
+  report rejected → PARTIAL). Malformed manifest elements are **narrowed before access** (a `[null]` element
+  must not throw), and a shared evidence **basename** is rejected with a clear error when files are attached.
+  `ImportResult`/`Rejection`/`RecordType` are **response DTOs in `@tilik/shared/contracts`** (moved out of
+  `apps/api`), pinned web-side `satisfies z.ZodType<ImportResult>` like every other response. Next's
+  `serverActions.bodySizeLimit` is **global + buffered pre-auth** (no per-action scope) → kept small (6mb) and
+  backstopped by a Caddy `request_body max_size`. Claim currency renders **float-free** (`BigInt`, never
+  `Number()` — precision). Details:
+  `docs/solutions/integration-issues/web-import-upload-form-prompt14-followup.md`.
 - **Enums have one source of truth.** Values live in `@tilik/shared`, mirrored in `schema.prisma`;
   `packages/db/scripts/check-enum-parity.ts` fails `typecheck` on drift. Use `@tilik/shared` enums at
   DTO/validation/API boundaries, Prisma enums only at the persistence edge.
