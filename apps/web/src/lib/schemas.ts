@@ -24,7 +24,9 @@ import type {
   EvidenceRecordDTO,
   FindingDTO,
   FindingReasons,
+  ImportResult,
   Me,
+  Rejection,
 } from '@tilik/shared/contracts';
 
 /**
@@ -190,21 +192,19 @@ export const CaseDetailSchema = z.object({
 }) satisfies z.ZodType<CaseDetail>;
 
 // ── Import upload (Prompt 14 follow-up: portal upload form) ───────────────────────────────────────
-// Response for POST /v1/imports. Mirrors the API's ImportResult (apps/api/src/imports/types.ts), which
-// lives on the API side rather than in @tilik/shared/contracts — so it's pinned here as a web-local
-// schema (no `satisfies` target). The import Server Action parses the response with this before the
-// client renders the accepted/rejected summary + per-record rejection list.
+// Response for POST /v1/imports, pinned to the shared contract like every other response schema: a drift
+// from `ImportResult` fails `pnpm typecheck`, and `safeParse` turns runtime drift into a clean error.
 const ImportRejectionSchema = z.object({
   position: z.number().int(),
   recordType: z.enum(['episode', 'claim-version', 'evidence-record', 'evidence-link']),
   ref: z.string(),
   errors: z.array(z.object({ field: z.string(), constraint: z.string() })),
-});
+}) satisfies z.ZodType<Rejection>;
 
 export const ImportResultSchema = z.object({
   batchId: z.string().min(1),
   status: z.enum(['PENDING', 'PROCESSING', 'DONE', 'FAILED', 'PARTIAL']),
   summary: z.object({ received: count, accepted: count, rejected: count }),
   rejected: z.array(ImportRejectionSchema),
-});
-export type ImportResultDTO = z.infer<typeof ImportResultSchema>;
+}) satisfies z.ZodType<ImportResult>;
+export type ImportResultDTO = ImportResult;

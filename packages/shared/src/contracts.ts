@@ -209,3 +209,34 @@ export interface CaseDetail {
   /** The reviewer's verdict, or null if undecided. Present ⇒ the decision panel is locked (read-only). */
   decision: CaseDecision | null;
 }
+
+// ── Prompt 06 / Prompt 14: import pipeline ───────────────────────────────────────────────────────
+
+/** The kind of one incoming bundle record. */
+export type RecordType = 'episode' | 'claim-version' | 'evidence-record' | 'evidence-link';
+
+/** A per-field validation/linkage failure. NEVER carries the offending value (no PII echo). */
+export interface FieldError {
+  field: string;
+  constraint: string;
+}
+
+/** A rejected record (DTO-invalid, duplicate, dangling ref, or missing upload). */
+export interface Rejection {
+  position: number;
+  recordType: RecordType;
+  ref: string;
+  errors: FieldError[];
+}
+
+/**
+ * `POST /v1/imports` and `GET /v1/imports/:id` response. `status` includes the API-derived `PARTIAL`
+ * (DONE with rejected>0), a superset of the DB `JobStatus` enum — which is why this is a response DTO,
+ * not an enum mirror, and belongs here.
+ */
+export interface ImportResult {
+  batchId: string;
+  status: 'PENDING' | 'PROCESSING' | 'DONE' | 'FAILED' | 'PARTIAL';
+  summary: { received: number; accepted: number; rejected: number };
+  rejected: Rejection[];
+}
