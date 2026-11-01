@@ -57,7 +57,9 @@ USER node
 EXPOSE 3001
 # Probe the unversioned /health (Public, excluded from /v1). A 200 also proves the current_user='tilik_app'
 # assertion, since /health runs SELECT current_user. node's built-in fetch — no curl to install.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=25s --retries=3 CMD \
+# interval kept short so `web` (depends_on: api service_healthy) isn't delayed ~30s after the api is up;
+# start-period stays generous to cover boot + the current_user assertion + user seed without false failures.
+HEALTHCHECK --interval=15s --timeout=5s --start-period=25s --retries=3 CMD \
   node -e "fetch('http://127.0.0.1:'+(process.env.API_PORT||3001)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 CMD ["node", "dist/main.js"]
 
