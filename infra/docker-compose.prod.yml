@@ -39,7 +39,8 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
-    mem_limit: 768m # starting point for a ~4 GB box — tune under load; protect this one first (data loss on OOM)
+    mem_limit: 768m # the ONE mem cap kept — Postgres must be protected (data loss on OOM); tune under load
+    cpus: 1.5
 
   minio:
     image: *minio-image
@@ -53,7 +54,7 @@ services:
       - tilik-minio-data:/data
     # No published ports — S3 API + console stay on the internal network. (See DEPLOY.md to harden with a
     # scoped service-account key + bucket object-lock/versioning instead of the root creds the api uses.)
-    mem_limit: 512m
+    cpus: 1.0
 
   # Creates the evidence bucket WITH object-lock (object-lock CAPABILITY + versioning), then provisions a
   # LEAST-PRIVILEGE IAM user for the api (Get/Put on the bucket only, never the root creds). The scoped user
@@ -152,7 +153,7 @@ services:
       SEED_REVIEWER_EMAIL: ${SEED_REVIEWER_EMAIL:?set SEED_REVIEWER_EMAIL in .env}
       SEED_REVIEWER_PASSWORD: ${SEED_REVIEWER_PASSWORD:?prod boot requires SEED_REVIEWER_PASSWORD}
       TZ: UTC
-    mem_limit: 512m
+    cpus: 1.0
     # Readiness (for seed + Caddy) comes from the image's baked HEALTHCHECK on /health.
 
   detector:
@@ -169,7 +170,7 @@ services:
       APP_DATABASE_URL: ${APP_DATABASE_URL:?set the NON-OWNER APP_DATABASE_URL in .env}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       TZ: UTC
-    mem_limit: 768m # sklearn + numpy + scipy; TF-IDF corpus build spikes — the heaviest runtime
+    cpus: 1.5 # sklearn + numpy + scipy; TF-IDF corpus build spikes — the heaviest runtime (watch as data grows)
 
   web:
     build:
@@ -188,7 +189,7 @@ services:
       NODE_ENV: production
       NEXT_PUBLIC_API_URL: http://api:3001 # server-side BFF target over the internal network
       TZ: UTC
-    mem_limit: 512m
+    cpus: 1.0
 
   # ── Edge (TLS) ────────────────────────────────────────────────────────────────────────────────────────
   # The ONLY service that publishes host ports. Auto-TLS via Let's Encrypt for a real TILIK_DOMAIN; the
@@ -219,7 +220,7 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
-    mem_limit: 128m
+    cpus: 0.5
 
   # ── Demo seed (one-shot, profile) ─────────────────────────────────────────────────────────────────────
   # Not in the default `up`. Run on demand:  ./compose.sh -f docker-compose.prod.yml --profile seed run --rm seed

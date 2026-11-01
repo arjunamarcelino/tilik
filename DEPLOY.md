@@ -30,11 +30,16 @@ Startup order is enforced by `depends_on`: `postgres (healthy) → migrate (comp
   publishes nothing for Postgres/MinIO by design. ⚠️ Security relies on _not publishing_ those ports, **not**
   on UFW: Docker inserts its own iptables rules ahead of UFW, so a published port is reachable regardless of
   a UFW "deny". If you ever must expose one for debugging, bind it to `127.0.0.1:` and reach it via SSH tunnel.
-- **Swap**: building three multi-stage images on 4 GB can OOM. Add swap, or build off-box:
+- **Swap + build separately**: building the images on a 4 GB box, **while the old stack is still running**
+  on a redeploy, can exhaust RAM and let the OOM killer reap Postgres. Add swap, and on a redeploy build
+  **before** bringing the stack up (don't `--build` against a live stack without swap):
   ```bash
   sudo fallocate -l 4G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
   echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+  # redeploy: build first, then roll — not `up -d --build` against the running stack
+  cd infra && ./compose.sh -f docker-compose.prod.yml build && ./compose.sh -f docker-compose.prod.yml up -d
   ```
+  Per-service `cpus` caps are set in the compose to keep a build from starving the live `api`/`postgres`.
 - **Build platform**: if you build on an Apple-Silicon machine for an amd64 VPS, build with
   `docker buildx build --platform linux/amd64 …` or you'll ship un-runnable arm64 images. Building on the
   VPS itself (or Coolify) avoids this.
