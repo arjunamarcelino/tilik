@@ -1,8 +1,88 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 type Status = 'idle' | 'streaming' | 'done' | 'error';
+
+// Strip inline markdown emphasis so no raw ** / ` characters reach the screen. Plain text only.
+const stripInline = (s: string) =>
+  s
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/[*`]/g, '')
+    .trim();
+
+/**
+ * Give the model's plain-text summary light visual structure WITHOUT a markdown/HTML renderer: we only map
+ * recognized LINE shapes (a `**heading**` line, a `- ` bullet) to styled JSX whose content is a plain,
+ * React-escaped text child. No HTML is injected, so attacker-influenceable evidence text can never execute
+ * (the inert-text guarantee from Prompt 13 holds). Section labels reuse the portal's uppercase-muted label
+ * style; bullets become a real list. During streaming a half-arrived `**heading` is detected by its `**`
+ * prefix so it never flickers as a paragraph first.
+ */
+function SummaryBody({ text, streaming }: { text: string; streaming: boolean }) {
+  const blocks: ReactNode[] = [];
+  let bullets: string[] = [];
+
+  const flushBullets = (key: string) => {
+    if (bullets.length === 0) return;
+    const items = bullets;
+    bullets = [];
+    blocks.push(
+      <ul key={key} className="ml-4 list-disc space-y-1 marker:text-border-strong">
+        {items.map((b, i) => (
+          <li key={i} style={{ overflowWrap: 'anywhere' }}>
+            {b}
+          </li>
+        ))}
+      </ul>,
+    );
+  };
+
+  text.split('\n').forEach((raw, i) => {
+    const line = raw.trim();
+    if (/^[-*]\s+/.test(line)) {
+      bullets.push(stripInline(line.replace(/^[-*]\s+/, '')));
+      return;
+    }
+    flushBullets(`ul-${i}`);
+    if (line === '') return; // blank line: block margins provide the section gap
+    if (line.startsWith('**')) {
+      const heading = stripInline(line).replace(/:$/, '');
+      if (heading)
+        blocks.push(
+          <h3
+            key={i}
+            className="mt-4 text-xs font-semibold tracking-wide text-muted uppercase first:mt-0"
+          >
+            {heading}
+          </h3>,
+        );
+      return;
+    }
+    blocks.push(
+      <p key={i} style={{ overflowWrap: 'anywhere' }}>
+        {stripInline(line)}
+      </p>,
+    );
+  });
+  flushBullets('ul-end');
+
+  return (
+    <div
+      role="log"
+      aria-live="off"
+      aria-busy={streaming}
+      className="flex flex-col gap-2 leading-relaxed text-brand-ink"
+    >
+      {blocks}
+      {streaming && (
+        <span aria-hidden="true" className="animate-pulse text-muted">
+          ▍
+        </span>
+      )}
+    </div>
+  );
+}
 
 const CARD = 'rounded-lg border border-border bg-surface';
 const HEADER =
@@ -88,7 +168,7 @@ export function SummaryPanel({
         setStatus('error');
         setError(
           res.status === 429
-            ? 'Terlalu banyak permintaan — coba lagi dalam satu menit.'
+            ? 'Terlalu banyak permintaan. Coba lagi dalam satu menit.'
             : 'Gagal membuat ringkasan. Coba lagi.',
         );
         return;
@@ -122,7 +202,7 @@ export function SummaryPanel({
         <span className="flex items-center gap-2">
           Ringkasan AI
           <span className="rounded-full bg-canvas px-2 py-0.5 text-xs font-normal text-muted">
-            Bantuan asisten — bukan keputusan
+            Bantuan asisten, bukan keputusan
           </span>
         </span>
         <button
@@ -154,18 +234,7 @@ export function SummaryPanel({
           <p className="text-muted">Tidak dapat meringkas kasus ini dari bukti yang tersedia.</p>
         )}
 
-        {text.length > 0 && (
-          <div
-            role="log"
-            aria-live="off"
-            aria-busy={streaming}
-            className="text-brand-ink"
-            style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
-          >
-            {text}
-            {streaming && <span className="ml-0.5 animate-pulse text-muted">▍</span>}
-          </div>
-        )}
+        {text.length > 0 && <SummaryBody text={text} streaming={streaming} />}
 
         {/* Announce completion once — never per token. */}
         <p role="status" aria-live="polite" className="sr-only">
